@@ -29,6 +29,7 @@
 
 int black_level = 0;
 int white_level = 4095;
+int image_height = 0;
 int swap_lines = 0;
 
 struct cmd_group options[] = {
@@ -39,6 +40,9 @@ struct cmd_group options[] = {
             { &white_level,    1, "--white=%d",    "Set white level (default 4095)\n"
                              "                      - if too high, you may get pink highlights\n"
                              "                      - if too low, useful highlights may clip to white" },
+            { &image_height,   1, "--height=%d",    "Set image height\n"
+                             "                      - default: autodetect from file size\n"
+                             "                      - if input is stdin, default is 3072" },
             { &swap_lines,     1,  "--swap-lines",  "Swap lines in the raw data\n"
                               "                      - workaround for an old Beta bug" },
             OPTION_EOL
@@ -135,14 +139,31 @@ void reverse_lines_order(char* buf, int count)
     }
 }
 
+static int endswith(char* str, char* suffix)
+{
+    int l1 = strlen(str);
+    int l2 = strlen(suffix);
+    if (l1 < l2)
+    {
+        return 0;
+    }
+    if (strcmp(str + l1 - l2, suffix) == 0)
+    {
+        return 1;
+    }
+    return 0;
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 1)
     {
         printf("DNG converter for Apertus .raw12 files\n");
+        printf("\n");
         printf("Usage:\n");
         printf("  %s input.raw12 [input2.raw12] [options]\n", argv[0]);
-
+        printf("  cat input.raw12 | %s output.dng [options]\n", argv[0]);
+        printf("\n");
         show_commandline_help(argv[0]);
         return 0;
     }
@@ -153,22 +174,51 @@ int main(int argc, char** argv)
             parse_commandline_option(argv[k]);
     show_active_options();
 
-    /* all other arguments are input files */
+    /* all other arguments are input or output files */
     for (int k = 1; k < argc; k++)
     {
         if (argv[k][0] == '-')
             continue;
         
+        FILE* fi;
+        char* out_filename;
+
         printf("\n%s\n", argv[k]);
-        FILE* fi = fopen(argv[k], "rb");
-        CHECK(fi, "could not open %s", argv[k]);
         
-        /* there are 4096 columns in a .raw12 file, but the number of lines is variable */
-        /* autodetect it from file size, for now */
+        if (endswith(argv[k], ".raw12"))
+        {
+            fi = fopen(argv[k], "rb");
+            CHECK(fi, "could not open %s", argv[k]);
+
+            /* replace input file extension with .DNG */
+            static char fo[256];
+            snprintf(fo, sizeof(fo), "%s", argv[k]);
+            char* ext = strchr(fo, '.');
+            if (!ext) ext = fo + strlen(fo) - 4;
+            ext[0] = '.';
+            ext[1] = 'D';
+            ext[2] = 'N';
+            ext[3] = 'G';
+            ext[4] = '\0';
+            out_filename = fo;
+        }
+        else if (endswith(argv[k], ".dng") || endswith(argv[k], ".DNG"))
+        {
+            fi = stdin;
+            out_filename = argv[k];
+            if (!image_height) image_height = 3072;
+        }
+        
         int width = 4096;
-        fseek(fi, 0, SEEK_END);
-        int height = ftell(fi) / (width * 12 / 8);
-        fseek(fi, 0, SEEK_SET);
+        int height = image_height;
+        if (!height)
+        {
+            /* there are 4096 columns in a .raw12 file, but the number of lines is variable */
+            /* autodetect it from file size, if not specified in the command line */
+            fseek(fi, 0, SEEK_END);
+            height = ftell(fi) / (width * 12 / 8);
+            fseek(fi, 0, SEEK_SET);
+        }
         raw_set_geometry(width, height, 0, 0, 0, 0);
         
         /* use black and white levels from command-line */
@@ -222,22 +272,13 @@ int main(int argc, char** argv)
             printf("Line swap...\n");
             reverse_lines_order(raw_info.buffer, raw_info.frame_size);
         }
-
-        /* replace input file extension with .DNG */
-        char fo[256];
-        snprintf(fo, sizeof(fo), "%s", argv[k]);
-        char* ext = strchr(fo, '.');
-        if (!ext) ext = fo + strlen(fo) - 4;
-        ext[0] = '.';
-        ext[1] = 'D';
-        ext[2] = 'N';
-        ext[3] = 'G';
-        ext[4] = '\0';
         
         /* save the DNG */
-        printf("Output file : %s\n", fo);
-        save_dng(fo, &raw_info);
+        printf("Output file : %s\n", out_filename);
+        save_dng(out_filename, &raw_info);
         fclose(fi);
+        
+        free(raw); raw_info.buffer = 0;
     }
 
     printf("Done.\n");
