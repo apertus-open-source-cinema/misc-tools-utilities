@@ -25,6 +25,27 @@
 #include "math.h"
 #include "raw.h"
 #include "chdk-dng.h"
+#include "cmdoptions.h"
+
+int black_level = 0;
+int white_level = 4095;
+int swap_lines = 0;
+
+struct cmd_group options[] = {
+    {
+        "Options", (struct cmd_option[]) {
+            { &black_level,    1, "--black=%d",    "Set black level (default 0)\n"
+                             "                      - negative values allowed" },
+            { &white_level,    1, "--white=%d",    "Set white level (default 4095)\n"
+                             "                      - if too high, you may get pink highlights\n"
+                             "                      - if too low, useful highlights may clip to white" },
+            { &swap_lines,     1,  "--swap-lines",  "Swap lines in the raw data\n"
+                              "                      - workaround for an old Beta bug" },
+            OPTION_EOL
+        },
+    },
+    OPTION_GROUP_EOL
+};
 
 struct raw_info raw_info;
 
@@ -92,93 +113,135 @@ static void raw12_data_offset(void* buf, int frame_size, int offset)
     }
 }
 
+/* todo: move this into FPGA */
+void reverse_lines_order(char* buf, int count)
+{
+    /* 4096 pixels per line */
+    struct line
+    {
+        struct raw12_twopix line[2048];
+    } __attribute__((packed));
+    
+    /* swap odd and even lines */
+    int i;
+    int height = count / sizeof(struct line);
+    struct line * bufl = (struct line *) buf;
+    for (i = 0; i < height; i += 2)
+    {
+        struct line aux;
+        aux = bufl[i];
+        bufl[i] = bufl[i+1];
+        bufl[i+1] = aux;
+    }
+}
+
 int main(int argc, char** argv)
 {
-    if (argc != 2 && argc != 4)
+    if (argc == 1)
     {
         printf("DNG converter for Apertus .raw12 files\n");
         printf("Usage:\n");
-        printf("  %s input.raw12\n", argv[0]);
-        printf("  %s input.raw12 <black_level> <white_level>\n", argv[0]);
-        return;
+        printf("  %s input.raw12 [input2.raw12] [options]\n", argv[0]);
+
+        show_commandline_help(argv[0]);
+        return 0;
     }
 
-    FILE* fi = fopen(argv[1], "rb");
-    CHECK(fi, "could not open %s", argv[1]);
-    
-    /* there are 4096 columns in a .raw12 file, but the number of lines is variable */
-    /* autodetect it from file size, for now */
-    int width = 4096;
-    fseek(fi, 0, SEEK_END);
-    int height = ftell(fi) / (width * 12 / 8);
-    fseek(fi, 0, SEEK_SET);
-    raw_set_geometry(width, height, 0, 0, 0, 0);
-    
-    /* use black and white levels from command-line */
-    if (argc == 4)
+    /* parse all command-line options */
+    for (int k = 1; k < argc; k++)
+        if (argv[k][0] == '-')
+            parse_commandline_option(argv[k]);
+    show_active_options();
+
+    /* all other arguments are input files */
+    for (int k = 1; k < argc; k++)
     {
-        raw_info.black_level = atoi(argv[2]);
-        raw_info.white_level = atoi(argv[3]);
-    }
-    
-    /* print current settings */
-    printf("Resolution  : %d x %d\n", raw_info.width, raw_info.height);
-    printf("Frame size  : %d bytes\n", raw_info.frame_size);
-    printf("Black level : %d\n", raw_info.black_level);
-    printf("White level : %d\n", raw_info.white_level);
-    switch(raw_info.cfa_pattern) {
-        case 0x02010100:
-    	    printf("Bayer Order : RGGB \n");    
-            break;
-        case 0x01000201:
-    	    printf("Bayer Order : GBRG \n");    
-            break;
-        case 0x01020001:
-    	    printf("Bayer Order : GRBG \n");    
-            break;
-        case 0x00010102:
-    	    printf("Bayer Order : BGGR \n");    
-            break;
-    }
+        if (argv[k][0] == '-')
+            continue;
+        
+        printf("\n%s\n", argv[k]);
+        FILE* fi = fopen(argv[k], "rb");
+        CHECK(fi, "could not open %s", argv[k]);
+        
+        /* there are 4096 columns in a .raw12 file, but the number of lines is variable */
+        /* autodetect it from file size, for now */
+        int width = 4096;
+        fseek(fi, 0, SEEK_END);
+        int height = ftell(fi) / (width * 12 / 8);
+        fseek(fi, 0, SEEK_SET);
+        raw_set_geometry(width, height, 0, 0, 0, 0);
+        
+        /* use black and white levels from command-line */
+        raw_info.black_level = black_level;
+        raw_info.white_level = white_level;
+        
+        /* print current settings */
+        printf("Resolution  : %d x %d\n", raw_info.width, raw_info.height);
+        printf("Frame size  : %d bytes\n", raw_info.frame_size);
+        printf("Black level : %d\n", raw_info.black_level);
+        printf("White level : %d\n", raw_info.white_level);
+        switch(raw_info.cfa_pattern) {
+            case 0x02010100:
+                printf("Bayer Order : RGGB \n");    
+                break;
+            case 0x01000201:
+                printf("Bayer Order : GBRG \n");    
+                break;
+            case 0x01020001:
+                printf("Bayer Order : GRBG \n");    
+                break;
+            case 0x00010102:
+                printf("Bayer Order : BGGR \n");    
+                break;
+        }
 
 
-    /* load the raw data and convert it to DNG */
-    char* raw = malloc(raw_info.frame_size);
-    CHECK(raw, "malloc");
-    
-    int r = fread(raw, 1, raw_info.frame_size, fi);
-    CHECK(r == raw_info.frame_size, "fread");
-    raw_info.buffer = raw;
-    
-    if (raw_info.black_level < 0)
-    {
-        /* We can't use a negative black level,
-         * but we may want to use one to fix green color cast in some images.
-         * Workaround: add a constant offset to the raw data, and use black=0 in exif.
-         */
-        int offset = -raw_info.black_level;     /* positive number */
-        printf("Raw offset  : %d\n", offset);
-        raw12_data_offset(raw_info.buffer, raw_info.frame_size, offset);
-        raw_info.black_level = 0;
-        raw_info.white_level = MIN(raw_info.white_level + offset, 4095);
+        /* load the raw data and convert it to DNG */
+        char* raw = malloc(raw_info.frame_size);
+        CHECK(raw, "malloc");
+        
+        int r = fread(raw, 1, raw_info.frame_size, fi);
+        CHECK(r == raw_info.frame_size, "fread");
+        raw_info.buffer = raw;
+        
+        if (raw_info.black_level < 0)
+        {
+            /* We can't use a negative black level,
+             * but we may want to use one to fix green color cast in some images.
+             * Workaround: add a constant offset to the raw data, and use black=0 in exif.
+             */
+            int offset = -raw_info.black_level;     /* positive number */
+            printf("Raw offset  : %d\n", offset);
+            raw12_data_offset(raw_info.buffer, raw_info.frame_size, offset);
+            raw_info.black_level = 0;
+            raw_info.white_level = MIN(raw_info.white_level + offset, 4095);
+        }
+
+        if (swap_lines)
+        {
+            printf("Line swap...\n");
+            reverse_lines_order(raw_info.buffer, raw_info.frame_size);
+        }
+
+        /* replace input file extension with .DNG */
+        char fo[256];
+        snprintf(fo, sizeof(fo), "%s", argv[k]);
+        char* ext = strchr(fo, '.');
+        if (!ext) ext = fo + strlen(fo) - 4;
+        ext[0] = '.';
+        ext[1] = 'D';
+        ext[2] = 'N';
+        ext[3] = 'G';
+        ext[4] = '\0';
+        
+        /* save the DNG */
+        printf("Output file : %s\n", fo);
+        save_dng(fo, &raw_info);
+        fclose(fi);
     }
-    
-    /* replace input file extension with .DNG */
-    char fo[256];
-    snprintf(fo, sizeof(fo), "%s", argv[1]);
-    char* ext = strchr(fo, '.');
-    if (!ext) ext = fo + strlen(fo) - 4;
-    ext[0] = '.';
-    ext[1] = 'D';
-    ext[2] = 'N';
-    ext[3] = 'G';
-    ext[4] = '\0';
-    
-    /* save the DNG */
-    printf("Output file : %s\n", fo);
-    save_dng(fo, &raw_info);
-    fclose(fi);
+
     printf("Done.\n");
+    
     return 0;
 }
 

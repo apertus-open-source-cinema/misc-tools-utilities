@@ -74,28 +74,6 @@ static int get_tick_count() { return get_ms_clock_value_fast(); }
 #define raw_size frame_size
 #define write FIO_WriteFile
 
-/* todo: move this into FPGA */
-void FAST reverse_bytes_order(char* buf, int count)
-{
-    /* 4096 pixels per line */
-    struct line
-    {
-        struct raw12_twopix line[2048];
-    } __attribute__((packed));
-    
-    /* swap odd and even lines */
-    int i;
-    int height = count / sizeof(struct line);
-    struct line * bufl = (struct line *) buf;
-    for (i = 0; i < height; i += 2)
-    {
-        struct line aux;
-        aux = bufl[i];
-        bufl[i] = bufl[i+1];
-        bufl[i+1] = aux;
-    }
-}
-
 //thumbnail
 static int dng_th_width = 128;
 static int dng_th_height = 84;
@@ -662,10 +640,7 @@ static void write_dng(FILE* fd, struct raw_info * raw_info)
         create_thumbnail(raw_info);
         write(fd, dng_header_buf, dng_header_buf_size);
         write(fd, thumbnail_buf, dng_th_width*dng_th_height*3);
-
-        reverse_bytes_order(UNCACHEABLE(rawadr), camera_sensor.raw_size);
         write(fd, UNCACHEABLE(rawadr), camera_sensor.raw_size);
-
         free_dng_header();
     }
 }
