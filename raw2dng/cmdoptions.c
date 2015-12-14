@@ -135,6 +135,15 @@ void show_commandline_help(char* progname)
     }
 }
 
+static char * first_line(char * msg)
+{
+    static char buf[100];
+    snprintf(buf, sizeof(buf), "%s", msg);
+    char* newline = strchr(buf, '\n');
+    if (newline) *newline = 0;
+    return buf;
+}
+
 void show_active_options()
 {
     struct cmd_group * g;
@@ -161,11 +170,11 @@ void show_active_options()
                 {
                     /* note that o->variable is the array where %d's or %f's are stored */
                     /* and o->value_to_assign is the number of items in that array */
-                    print_sscanf_option(o->option, o->variable, o->value_to_assign, o->help);
+                    print_sscanf_option(o->option, o->variable, o->value_to_assign, first_line(o->help));
                 }
                 else
                 {
-                    printf("%-20s: %s\n", o->option, o->help);
+                    printf("%-20s: %s\n", o->option, first_line(o->help));
                 }
             }
         }
