@@ -208,6 +208,10 @@ int main(int argc, char** argv)
             out_filename = argv[k];
             if (!image_height) image_height = 3072;
         }
+        else
+        {
+            continue;
+        }
         
         int width = 4096;
         int height = image_height;
