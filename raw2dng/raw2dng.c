@@ -26,11 +26,15 @@
 #include "raw.h"
 #include "chdk-dng.h"
 #include "cmdoptions.h"
+#include "patternnoise.h"
 
 int black_level = 0;
 int white_level = 4095;
 int image_height = 0;
 int swap_lines = 0;
+int fixpn = 0;
+int fixpn_flags1 = 0;
+int fixpn_flags2 = 0;
 
 struct cmd_group options[] = {
     {
@@ -45,7 +49,17 @@ struct cmd_group options[] = {
                              "                      - if input is stdin, default is 3072" },
             { &swap_lines,     1,  "--swap-lines",  "Swap lines in the raw data\n"
                               "                      - workaround for an old Beta bug" },
-            OPTION_EOL
+            { &fixpn,          1,  "--fixpn",           "Fix pattern noise (slow)" },
+            OPTION_EOL,
+        },
+    },
+    {
+        "Debug options", (struct cmd_option[]) {
+            { &fixpn_flags1,   FIXPN_DBG_DENOISED,  "--fixpn-dbg-denoised", "Pattern noise: show denoised image" },
+            { &fixpn_flags1,   FIXPN_DBG_NOISE,     "--fixpn-dbg-noise",    "Pattern noise: show noise image (original - denoised)" },
+            { &fixpn_flags1,   FIXPN_DBG_MASK,      "--fixpn-dbg-mask",     "Pattern noise: show masked areas (edges and highlights)" },
+            { &fixpn_flags2,   FIXPN_DBG_ROWNOISE,  "--fixpn-dbg-row",      "Pattern noise: debug rows (default: columns)" },
+            OPTION_EOL,
         },
     },
     OPTION_GROUP_EOL
@@ -275,6 +289,12 @@ int main(int argc, char** argv)
         {
             printf("Line swap...\n");
             reverse_lines_order(raw_info.buffer, raw_info.frame_size);
+        }
+        
+        if (fixpn)
+        {
+            int fixpn_flags = fixpn_flags1 | fixpn_flags2;
+            fix_pattern_noise(&raw_info, fixpn_flags);
         }
         
         /* save the DNG */
