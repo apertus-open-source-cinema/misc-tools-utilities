@@ -1,4 +1,4 @@
-raw2dng: raw2dng.c chdk-dng.c cmdoptions.c patternnoise.c
+raw2dng: raw2dng.c chdk-dng.c cmdoptions.c patternnoise.c metadata.c
 	gcc $^ -o raw2dng -m32 -lm -O3 -Wall -std=gnu99
 
 clean:

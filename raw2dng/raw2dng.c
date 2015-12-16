@@ -27,6 +27,7 @@
 #include "chdk-dng.h"
 #include "cmdoptions.h"
 #include "patternnoise.h"
+#include "metadata.h"
 
 int black_level = 0;
 int white_level = 4095;
@@ -229,12 +230,14 @@ int main(int argc, char** argv)
         
         int width = 4096;
         int height = image_height;
+        int has_metadata = 0;
         if (!height)
         {
             /* there are 4096 columns in a .raw12 file, but the number of lines is variable */
             /* autodetect it from file size, if not specified in the command line */
             fseek(fi, 0, SEEK_END);
             height = ftell(fi) / (width * 12 / 8);
+            has_metadata = (ftell(fi) - (width * height * 12 / 8) == 256);
             fseek(fi, 0, SEEK_SET);
         }
         raw_set_geometry(width, height, 0, 0, 0, 0);
@@ -283,6 +286,14 @@ int main(int argc, char** argv)
             raw12_data_offset(raw_info.buffer, raw_info.frame_size, offset);
             raw_info.black_level = 0;
             raw_info.white_level = MIN(raw_info.white_level + offset, 4095);
+        }
+        
+        if (has_metadata)
+        {
+            uint16_t registers[128];
+            int r = fread(registers, 1, 256, fi);
+            CHECK(r == 256, "fread");
+            extract_metadata(registers);
         }
 
         if (swap_lines)
