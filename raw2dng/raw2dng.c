@@ -52,12 +52,12 @@ struct cmd_group options[] = {
             { &swap_lines,     1,  "--swap-lines",  "Swap lines in the raw data\n"
                               "                      - workaround for an old Beta bug" },
             { &fixpn,          1,  "--fixpn",       "Fix pattern noise (slow)" },
-            { &dump_regs,  1,      "--dump-regs",   "Dump sensor registers from the metadata block" },
             OPTION_EOL,
         },
     },
     {
         "Debug options", (struct cmd_option[]) {
+            { &dump_regs,      1,                   "--dump-regs",          "Dump sensor registers from the metadata block" },
             { &fixpn_flags1,   FIXPN_DBG_DENOISED,  "--fixpn-dbg-denoised", "Pattern noise: show denoised image" },
             { &fixpn_flags1,   FIXPN_DBG_NOISE,     "--fixpn-dbg-noise",    "Pattern noise: show noise image (original - denoised)" },
             { &fixpn_flags1,   FIXPN_DBG_MASK,      "--fixpn-dbg-mask",     "Pattern noise: show masked areas (edges and highlights)" },
