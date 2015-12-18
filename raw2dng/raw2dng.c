@@ -36,6 +36,7 @@ int swap_lines = 0;
 int fixpn = 0;
 int fixpn_flags1 = 0;
 int fixpn_flags2 = 0;
+int dump_regs = 0;
 
 struct cmd_group options[] = {
     {
@@ -50,7 +51,8 @@ struct cmd_group options[] = {
                              "                      - if input is stdin, default is 3072" },
             { &swap_lines,     1,  "--swap-lines",  "Swap lines in the raw data\n"
                               "                      - workaround for an old Beta bug" },
-            { &fixpn,          1,  "--fixpn",           "Fix pattern noise (slow)" },
+            { &fixpn,          1,  "--fixpn",       "Fix pattern noise (slow)" },
+            { &dump_regs,  1,      "--dump-regs",   "Dump sensor registers from the metadata block" },
             OPTION_EOL,
         },
     },
@@ -293,7 +295,7 @@ int main(int argc, char** argv)
             uint16_t registers[128];
             int r = fread(registers, 1, 256, fi);
             CHECK(r == 256, "fread");
-            extract_metadata(registers);
+            extract_metadata(registers, dump_regs);
         }
 
         if (swap_lines)
