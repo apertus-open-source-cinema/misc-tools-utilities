@@ -96,8 +96,9 @@ static void dump_registers(uint16_t registers[128])
         [89]          = "Training_pattern, Black_col_en",
         [90 ... 94]   = "Channel_en top/bot",
         [95 ... 96]   = "ADC_clk_en top/bot",
-        [98]          = "Setting '98'",     /* not named in datasheet,
-                                               but looks similar to Setting 1..7. */
+        [98]          = "Setting '98'",         /* not named in datasheet,
+                                                   but looks similar to Setting 1..7. */
+        [102]         = "Black sun protection", /* not in datasheet; see AN01 and AN02 */
         [106]         = "Vtfl",
         [107]         = "Clock speed tuning",
         [109]         = "Vramp",
@@ -118,7 +119,6 @@ static void dump_registers(uint16_t registers[128])
         [97]          = 0,
         [99]          = 34952,
         [100 ... 101] = 0,
-        [102]         = 8302,
         [103]         = 4032,
         [104]         = 64,
         [105]         = 8256,
