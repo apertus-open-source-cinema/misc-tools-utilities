@@ -337,43 +337,7 @@ static void fix_column_noise_rggb(int16_t * raw, int w, int h, int white)
     free(bs);
 }
 
-/* unpack raw data from 12-bit to 16-bit */
-/* this also promotes the data to 15-bit, so we can work on int16_t internally */
-static void unpack12(struct raw_info * raw_info, int16_t * buf)
-{
-    for (int y = 0; y < raw_info->height; y++)
-    {
-        for (int x = 0; x < raw_info->width; x += 2)
-        {
-            struct raw12_twopix * p = (struct raw12_twopix *)(raw_info->buffer + y * raw_info->pitch + x * sizeof(struct raw12_twopix) / 2);
-            unsigned a = (p->a_hi << 4) | p->a_lo;
-            unsigned b = (p->b_hi << 8) | p->b_lo;
-            unsigned w = raw_info->width;
-            buf[x + y*w] = a << 3;
-            buf[x + 1 + y*w] = b << 3;
-        }
-    }
-}
-
-/* pack raw data from 16-bit to 12-bit */
-/* this also adds some anti-posterization noise, which helps reducing the pattern a bit */
-static void pack12(struct raw_info * raw_info, int16_t * buf)
-{
-    for (int y = 0; y < raw_info->height; y++)
-    {
-        for (int x = 0; x < raw_info->width; x += 2)
-        {
-            struct raw12_twopix * p = (struct raw12_twopix *)(raw_info->buffer + y * raw_info->pitch + x * sizeof(struct raw12_twopix) / 2);
-            unsigned w = raw_info->width;
-            unsigned a = ((buf[x + y*w] >> 2) + rand()%2) >> 1;
-            unsigned b = ((buf[x + 1 + y*w] >> 2) + rand()%2) >> 1;
-            p->a_lo = a; p->a_hi = a >> 4;
-            p->b_lo = b; p->b_hi = b >> 8;
-        }
-    }
-}
-
-void fix_pattern_noise(struct raw_info * raw_info, int debug_flags)
+void fix_pattern_noise(struct raw_info * raw_info, int16_t * raw, int debug_flags)
 {
     printf("Fixing pattern noise...\n");
 
@@ -389,12 +353,7 @@ void fix_pattern_noise(struct raw_info * raw_info, int debug_flags)
     int w = raw_info->width;
     int h = raw_info->height;
 
-    /* unpack the raw data, so it's easier to work with */
-    int16_t * raw      = malloc(w * h * sizeof(raw[0])); /* Bayer data */
-    int16_t * raw_t    = malloc(w * h * sizeof(raw[0])); /* transposed version */
-    unpack12(raw_info, raw);
-
-    /* after unpacking, data was multiplied by 8 */
+    /* in raw16, data is multiplied by 8 */
     /* we need the white level to ignore overexposed areas when looking for pattern noise */
     int white = raw_info->white_level * 8;
     
@@ -408,15 +367,11 @@ void fix_pattern_noise(struct raw_info * raw_info, int debug_flags)
     
     if (!g_debug_flags || (g_debug_flags & FIXPN_DBG_ROWNOISE))
     {
+        /* transpose, process just like before, then transpose back */
+        int16_t * raw_t = malloc(w * h * sizeof(raw[0]));
         transpose(raw, raw_t, w, h);
         fix_column_noise_rggb(raw_t, h, w, white);
         transpose(raw_t, raw, h, w);
+        free(raw_t);
     }
-    
-    /* re-pack the raw data */
-    pack12(raw_info, raw);
-    
-    /* cleanup */
-    free(raw);
-    free(raw_t);
 }
