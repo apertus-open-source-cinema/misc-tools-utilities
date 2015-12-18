@@ -45,7 +45,7 @@ static double get_exposure(uint16_t registers[128])
         default:
             return 0;
     }
-    double lvds = 300e6;
+    double lvds = 250e6;
     return exposure(registers[72]*65536+registers[71], registers[82], registers[85], bits, lvds);
 }
 
