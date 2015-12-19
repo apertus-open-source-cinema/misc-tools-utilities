@@ -47,6 +47,7 @@ const uint16_t Lut_B [] = { 0,5,11,16,21,27,32,37,42,48,53,58,64,69,74,80,85,90,
 
 int black_level = 0;
 int white_level = 4095;
+int image_width = 0;
 int image_height = 0;
 int swap_lines = 0;
 int use_lut = 0;
@@ -63,14 +64,15 @@ struct cmd_group options[] = {
             { &white_level,    1, "--white=%d",    "Set white level (default 4095)\n"
                              "                      - if too high, you may get pink highlights\n"
                              "                      - if too low, useful highlights may clip to white" },
-            { &image_height,   1, "--height=%d",    "Set image height\n"
+            { &image_width,   1,  "--width=%d",    "Set image width (default 4096)"},
+            { &image_height,   1, "--height=%d",   "Set image height\n"
                              "                      - default: autodetect from file size\n"
                              "                      - if input is stdin, default is 3072" },
-            { &swap_lines,     1,  "--swap-lines",  "Swap lines in the raw data\n"
-                              "                      - workaround for an old Beta bug" },
-            { &use_lut,        1,  "--lut",         "Linearize sensor response with per-channel LUTs\n"
+            { &swap_lines,     1,  "--swap-lines", "Swap lines in the raw data\n"
+                             "                      - workaround for an old Beta bug" },
+            { &use_lut,        1,  "--lut",        "Linearize sensor response with per-channel LUTs\n"
                              "                      - probably correct only for one single camera :)" },
-            { &fixpn,          1,  "--fixpn",       "Fix pattern noise (slow)" },
+            { &fixpn,          1,  "--fixpn",      "Fix pattern noise (slow)" },
             OPTION_EOL,
         },
     },
@@ -199,25 +201,24 @@ static void pack12(struct raw_info * raw_info, int16_t * buf)
 }
 
 /* todo: move this into FPGA */
-void reverse_lines_order(char* buf, int count)
+void reverse_lines_order(char* buf, int count, int width)
 {
-    /* 4096 pixels per line */
-    struct line
-    {
-        struct raw12_twopix line[2048];
-    } __attribute__((packed));
+    /* line width, in bytes */
+    int pitch = width * 12 / 8;
+    void* aux = malloc(pitch);
+    CHECK(aux, "malloc");
     
     /* swap odd and even lines */
     int i;
-    int height = count / sizeof(struct line);
-    struct line * bufl = (struct line *) buf;
+    int height = count / pitch;
     for (i = 0; i < height; i += 2)
     {
-        struct line aux;
-        aux = bufl[i];
-        bufl[i] = bufl[i+1];
-        bufl[i+1] = aux;
+        memcpy(aux, buf + i * pitch, pitch);
+        memcpy(buf + i * pitch, buf + (i+1) * pitch, pitch);
+        memcpy(buf + (i+1) * pitch, aux, pitch);
     }
+    
+    free(aux);
 }
 
 static int endswith(char* str, char* suffix)
@@ -291,16 +292,16 @@ int main(int argc, char** argv)
         }
         else
         {
+            printf("Unknown file type.\n");
             continue;
         }
         
-        int width = 4096;
+        int width = image_width ? image_width : 4096;
         int height = image_height;
         int has_metadata = 0;
         if (!height)
         {
-            /* there are 4096 columns in a .raw12 file, but the number of lines is variable */
-            /* autodetect it from file size, if not specified in the command line */
+            /* autodetect height from file size, if not specified in the command line */
             fseek(fi, 0, SEEK_END);
             height = ftell(fi) / (width * 12 / 8);
             has_metadata = (ftell(fi) - (width * height * 12 / 8) == 256);
@@ -365,7 +366,7 @@ int main(int argc, char** argv)
         if (swap_lines)
         {
             printf("Line swap...\n");
-            reverse_lines_order(raw_info.buffer, raw_info.frame_size);
+            reverse_lines_order(raw_info.buffer, raw_info.frame_size, raw_info.width);
         }
         
         int16_t * raw16 = 0;
