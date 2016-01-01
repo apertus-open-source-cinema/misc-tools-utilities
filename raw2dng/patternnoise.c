@@ -199,7 +199,7 @@ static void fix_column_noise(int16_t * original, int16_t * denoised, int w, int 
     {
         /* debug: show denoised image */
         for (int i = 0; i < w*h; i++)
-            original[i] = denoised[i];
+            original[i] = MAX(denoised[i], 0);
         goto end;
     }
     else if (g_debug_flags & FIXPN_DBG_NOISE)
