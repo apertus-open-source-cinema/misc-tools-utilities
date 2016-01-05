@@ -192,8 +192,8 @@ static void pack12(struct raw_info * raw_info, int16_t * buf)
         {
             struct raw12_twopix * p = (struct raw12_twopix *)(raw_info->buffer + y * raw_info->pitch + x * sizeof(struct raw12_twopix) / 2);
             unsigned w = raw_info->width;
-            unsigned a = ((buf[x + y*w] >> 2) + rand()%2) >> 1;
-            unsigned b = ((buf[x + 1 + y*w] >> 2) + rand()%2) >> 1;
+            unsigned a = ((MAX(buf[x + y*w],    0) >> 2) + rand()%2) >> 1;
+            unsigned b = ((MAX(buf[x + 1 + y*w],0) >> 2) + rand()%2) >> 1;
             p->a_lo = a; p->a_hi = a >> 4;
             p->b_lo = b; p->b_hi = b >> 8;
         }
