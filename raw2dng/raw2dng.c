@@ -22,6 +22,9 @@
 #include "stdio.h"
 #include "stdlib.h"
 #include "string.h"
+#include "ctype.h"
+#include "unistd.h"
+#include "sys/stat.h"
 #include "math.h"
 #include "raw.h"
 #include "chdk-dng.h"
@@ -55,6 +58,7 @@ int fixpn = 0;
 int fixpn_flags1 = 0;
 int fixpn_flags2 = 0;
 int dump_regs = 0;
+int no_darkframe = 0;
 
 struct cmd_group options[] = {
     {
@@ -73,6 +77,7 @@ struct cmd_group options[] = {
             { &use_lut,        1,  "--lut",        "Linearize sensor response with per-channel LUTs\n"
                              "                      - probably correct only for one single camera :)" },
             { &fixpn,          1,  "--fixpn",      "Fix pattern noise (slow)" },
+            { &no_darkframe,   1,  "--no-dark",    "Disable dark frame (if darkframe.pgm is present)" },
             OPTION_EOL,
         },
     },
@@ -98,6 +103,11 @@ struct raw_info raw_info;
    ({ __typeof__ ((a)+(b)) _a = (a); \
       __typeof__ ((a)+(b)) _b = (b); \
      _a < _b ? _a : _b; })
+
+#define MAX(a,b) \
+   ({ __typeof__ ((a)+(b)) _a = (a); \
+      __typeof__ ((a)+(b)) _b = (b); \
+     _a > _b ? _a : _b; })
 
 void raw_set_geometry(int width, int height, int skip_left, int skip_right, int skip_top, int skip_bottom)
 {
@@ -145,6 +155,77 @@ static void raw12_data_offset(void* buf, int frame_size, int offset)
         
         buf2[i].a_lo = a; buf2[i].a_hi = a >> 4;
         buf2[i].b_lo = b; buf2[i].b_hi = b >> 8;
+    }
+}
+
+static void reverse_bytes_order(uint8_t* buf, int count)
+{
+    uint16_t* buf16 = (uint16_t*) buf;
+    int i;
+    for (i = 0; i < count/2; i++)
+    {
+        uint16_t x = buf16[i];
+        buf[2*i+1] = x;
+        buf[2*i] = x >> 8;
+    }
+}
+
+static int file_exists(char * filename)
+{
+    struct stat buffer;   
+    return (stat (filename, &buffer) == 0);
+}
+
+/* for dark frames, clip frames, gray frames, stuff like that */
+static void read_reference_frame(char* filename, int16_t * buf, struct raw_info * raw_info)
+{
+    FILE* fp = fopen(filename, "rb");
+    CHECK(fp, "could not open %s", filename);
+
+    /* PGM read code from dcraw */
+    int dim[3]={0,0,0}, comment=0, number=0, error=0, nd=0, c;
+
+      if (fgetc(fp) != 'P' || fgetc(fp) != '5') error = 1;
+      while (!error && nd < 3 && (c = fgetc(fp)) != EOF) {
+        if (c == '#')  comment = 1;
+        if (c == '\n') comment = 0;
+        if (comment) continue;
+        if (isdigit(c)) number = 1;
+        if (number) {
+          if (isdigit(c)) dim[nd] = dim[nd]*10 + c -'0';
+          else if (isspace(c)) {
+        number = 0;  nd++;
+          } else error = 1;
+        }
+      }
+    
+    CHECK(!(error || nd < 3), "not a valid PGM file\n");
+
+    int width = dim[0];
+    int height = dim[1];
+    
+    if (width != raw_info->width || height != raw_info->height)
+    {
+        printf("%s: size mismatch, expected %dx%d, got %dx%d.\n",
+            filename, raw_info->width, raw_info->height, width, height
+        );
+        exit(1);
+    }
+
+    int size = fread(buf, 1, width * height * 2, fp);
+    CHECK(size == width * height * 2, "fread");
+    fclose(fp);
+
+    /* PGM is big endian, need to reverse it */
+    reverse_bytes_order((void*)buf, width * height * 2);
+}
+
+static void subtract_dark_frame(struct raw_info * raw_info, int16_t * raw16, int16_t * dark)
+{
+    int n = raw_info->width * raw_info->height;
+    for (int i = 0; i < n; i++)
+    {
+        raw16[i] -= dark[i];
     }
 }
 
@@ -245,6 +326,8 @@ int main(int argc, char** argv)
         printf("Usage:\n");
         printf("  %s input.raw12 [input2.raw12] [options]\n", argv[0]);
         printf("  cat input.raw12 | %s output.dng [options]\n", argv[0]);
+        printf("\n");
+        printf("If exists, darkframe.pgm will be subtracted.");
         printf("\n");
         show_commandline_help(argv[0]);
         return 0;
@@ -370,8 +453,13 @@ int main(int argc, char** argv)
         }
         
         int16_t * raw16 = 0;
+
+        /* todo: use a dark frame for each gain setting */
+        int use_darkframe = !no_darkframe && file_exists("darkframe.pgm");
+
+        int raw16_postprocessing = (use_lut || use_darkframe || fixpn);
         
-        if (use_lut || fixpn)
+        if (raw16_postprocessing)
         {
             /* if we process the raw data, unpack it to int16_t (easier to work with) */
             /* this also multiplies the values by 8 and - optionally - applies LUTs */
@@ -383,13 +471,23 @@ int main(int argc, char** argv)
             unpack12(&raw_info, raw16, use_lut);
         }
         
+        if (use_darkframe)
+        {
+            /* fixme: LUTs should be applied after dark frame */
+            printf("Dark frame  : darkframe.pgm\n");
+            int16_t * dark = malloc(raw_info.width * raw_info.height * sizeof(dark[0]));
+            read_reference_frame("darkframe.pgm", dark, &raw_info);
+            subtract_dark_frame(&raw_info, raw16, dark);
+            free(dark);
+        }
+        
         if (fixpn)
         {
             int fixpn_flags = fixpn_flags1 | fixpn_flags2;
             fix_pattern_noise(&raw_info, raw16, fixpn_flags);
         }
 
-        if (use_lut || fixpn)
+        if (raw16_postprocessing)
         {
             /* processing done, repack the 16-bit data into 12-bit raw buffer */
             pack12(&raw_info, raw16);
