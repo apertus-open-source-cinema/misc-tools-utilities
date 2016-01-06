@@ -60,6 +60,7 @@ int fixpn_flags1 = 0;
 int fixpn_flags2 = 0;
 int dump_regs = 0;
 int no_darkframe = 0;
+int no_gainframe = 0;
 
 struct cmd_group options[] = {
     {
@@ -78,7 +79,8 @@ struct cmd_group options[] = {
             { &use_lut,        1,  "--lut",        "Linearize sensor response with per-channel LUTs\n"
                              "                      - probably correct only for one single camera :)" },
             { &fixpn,          1,  "--fixpn",      "Fix pattern noise (slow)" },
-            { &no_darkframe,   1,  "--no-dark",    "Disable dark frame (if darkframe.pgm is present)" },
+            { &no_darkframe,   1,  "--no-darkframe", "Disable dark frame (if darkframe.pgm is present)" },
+            { &no_gainframe,   1,  "--no-gainframe", "Disable gain frame (if gainframe.pgm is present)" },
             OPTION_EOL,
         },
     },
@@ -269,6 +271,15 @@ static void subtract_dark_frame(struct raw_info * raw_info, int16_t * raw16, int
     }
 }
 
+static void apply_gain_frame(struct raw_info * raw_info, int16_t * raw16, uint16_t * dark)
+{
+    int n = raw_info->width * raw_info->height;
+    for (int i = 0; i < n; i++)
+    {
+        raw16[i] = (int32_t) raw16[i] * dark[i] / 16384;
+    }
+}
+
 /* unpack raw data from 12-bit to 16-bit */
 /* this also promotes the data to 15-bit,
  * so we can use int16_t for processing */
@@ -367,7 +378,10 @@ int main(int argc, char** argv)
         printf("  %s input.raw12 [input2.raw12] [options]\n", argv[0]);
         printf("  cat input.raw12 | %s output.dng [options]\n", argv[0]);
         printf("\n");
-        printf("If exists, darkframe.pgm will be subtracted.");
+        printf("Flat field correction:\n");
+        printf(" - darkframe.pgm will be subtracted (data is x8)\n");
+        printf(" - gainframe.pgm will be multiplied (1.0 = 16384)\n");
+        printf(" - reference images are 16-bit PGM, in the current directory.\n");
         printf("\n");
         show_commandline_help(argv[0]);
         return 0;
@@ -503,8 +517,9 @@ int main(int argc, char** argv)
 
         /* todo: use a dark frame for each gain setting */
         int use_darkframe = !no_darkframe && file_exists("darkframe.pgm");
+        int use_gainframe = !no_gainframe && file_exists("gainframe.pgm");
 
-        int raw16_postprocessing = (use_lut || use_darkframe || fixpn);
+        int raw16_postprocessing = (use_lut || use_darkframe || use_gainframe || fixpn);
         
         if (raw16_postprocessing)
         {
@@ -526,6 +541,15 @@ int main(int argc, char** argv)
             read_reference_frame("darkframe.pgm", dark, &raw_info);
             subtract_dark_frame(&raw_info, raw16, dark);
             free(dark);
+        }
+
+        if (use_gainframe)
+        {
+            printf("Gain frame  : gainframe.pgm\n");
+            uint16_t * gain = malloc(raw_info.width * raw_info.height * sizeof(gain[0]));
+            read_reference_frame("gainframe.pgm", (int16_t*) gain, &raw_info);
+            apply_gain_frame(&raw_info, raw16, gain);
+            free(gain);
         }
         
         if (fixpn)
