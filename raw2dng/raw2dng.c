@@ -31,6 +31,7 @@
 #include "cmdoptions.h"
 #include "patternnoise.h"
 #include "metadata.h"
+#include "wirth.h"
 
 /* these LUTs should make the sensor response linear */
 /* they also multiply the input values by 8, to reduce roundoff errors */
@@ -48,7 +49,7 @@ const uint16_t Lut_B [] = { 0,5,11,16,21,27,32,37,42,48,53,58,64,69,74,80,85,90,
    -3284, 10000,    11499, 10000,    1737, 10000, \
    -1283, 10000,     3550, 10000,    5967, 10000
 
-int black_level = 0;
+int black_level = 0xFFFF;   /* autodetected from black reference columns */
 int white_level = 4095;
 int image_width = 0;
 int image_height = 0;
@@ -63,12 +64,12 @@ int no_darkframe = 0;
 struct cmd_group options[] = {
     {
         "Options", (struct cmd_option[]) {
-            { &black_level,    1, "--black=%d",    "Set black level (default 0)\n"
+            { &black_level,    1, "--black=%d",    "Set black level (default: autodetect)\n"
                              "                      - negative values allowed" },
-            { &white_level,    1, "--white=%d",    "Set white level (default 4095)\n"
+            { &white_level,    1, "--white=%d",    "Set white level (default: 4095)\n"
                              "                      - if too high, you may get pink highlights\n"
                              "                      - if too low, useful highlights may clip to white" },
-            { &image_width,   1,  "--width=%d",    "Set image width (default 4096)"},
+            { &image_width,   1,  "--width=%d",    "Set image width (default: 4096)"},
             { &image_height,   1, "--height=%d",   "Set image height\n"
                              "                      - default: autodetect from file size\n"
                              "                      - if input is stdin, default is 3072" },
@@ -156,6 +157,45 @@ static void raw12_data_offset(void* buf, int frame_size, int offset)
         buf2[i].a_lo = a; buf2[i].a_hi = a >> 4;
         buf2[i].b_lo = b; buf2[i].b_hi = b >> 8;
     }
+}
+
+/**
+ * Detect black level from black reference columns (median).
+ * This ONLY works well after subtracting a dark frame,
+ * otherwise the actual black level can be a few hundred units
+ * higher than the black reference values (why?!)
+ */
+static void raw12_detect_black_level(struct raw_info * raw_info)
+{
+    /* there are 8 black reference columns on each side */
+    const int max_samples = 3072 * 16;
+    int* samples = malloc(max_samples * sizeof(samples[0]));
+    int num_samples = 0;
+    
+    for (int y = 0; y < raw_info->height; y++)
+    {
+        for (int x = 0; x < raw_info->width; x += 2)
+        {
+            if (x == 8)
+            {
+                /* fast forward to the right side */
+                x = raw_info->width - 8;
+            }
+            struct raw12_twopix * p = (struct raw12_twopix *)(raw_info->buffer + y * raw_info->pitch + x * sizeof(struct raw12_twopix) / 2);
+            unsigned a = (p->a_hi << 4) | p->a_lo;
+            unsigned b = (p->b_hi << 8) | p->b_lo;
+            
+            if (num_samples + 1 < max_samples)
+            {
+                samples[num_samples++] = a;
+                samples[num_samples++] = b;
+            }
+        }
+    }
+    
+    raw_info->black_level = median_int_wirth(samples, num_samples);
+    
+    free(samples);
 }
 
 static void reverse_bytes_order(uint8_t* buf, int count)
@@ -392,15 +432,9 @@ int main(int argc, char** argv)
         }
         raw_set_geometry(width, height, 0, 0, 0, 0);
         
-        /* use black and white levels from command-line */
-        raw_info.black_level = black_level;
-        raw_info.white_level = white_level;
-        
         /* print current settings */
         printf("Resolution  : %d x %d\n", raw_info.width, raw_info.height);
         printf("Frame size  : %d bytes\n", raw_info.frame_size);
-        printf("Black level : %d\n", raw_info.black_level);
-        printf("White level : %d\n", raw_info.white_level);
         switch(raw_info.cfa_pattern) {
             case 0x02010100:
                 printf("Bayer Order : RGGB \n");    
@@ -424,6 +458,19 @@ int main(int argc, char** argv)
         int r = fread(raw, 1, raw_info.frame_size, fi);
         CHECK(r == raw_info.frame_size, "fread");
         raw_info.buffer = raw;
+
+        /* use black and white levels from command-line */
+        raw_info.black_level = black_level;
+        raw_info.white_level = white_level;
+
+        if (black_level == 0xFFFF)
+        {
+            /* black level not specified? autodetect from black reference columns */
+            raw12_detect_black_level(&raw_info);
+        }
+        
+        printf("Black level : %d\n", raw_info.black_level);
+        printf("White level : %d\n", raw_info.white_level);
         
         if (raw_info.black_level < 0)
         {
