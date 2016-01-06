@@ -218,6 +218,13 @@ static int file_exists(char * filename)
     return (stat (filename, &buffer) == 0);
 }
 
+static int file_exists_warn(char * filename)
+{
+    int ans = file_exists(filename);
+    if (!ans) printf("Not found   : %s\n", filename);
+    return ans;
+}
+
 /* for dark frames, clip frames, gray frames, stuff like that */
 static void read_reference_frame(char* filename, int16_t * buf, struct raw_info * raw_info)
 {
@@ -379,8 +386,9 @@ int main(int argc, char** argv)
         printf("  cat input.raw12 | %s output.dng [options]\n", argv[0]);
         printf("\n");
         printf("Flat field correction:\n");
-        printf(" - darkframe.pgm will be subtracted (data is x8)\n");
-        printf(" - gainframe.pgm will be multiplied (1.0 = 16384)\n");
+        printf(" - each gain requires two reference images (N=1,2,3,4):\n");
+        printf(" - darkframe-xN.pgm will be subtracted (data is x8)\n");
+        printf(" - gainframe-xN.pgm will be multiplied (1.0 = 16384)\n");
         printf(" - reference images are 16-bit PGM, in the current directory.\n");
         printf("\n");
         show_commandline_help(argv[0]);
@@ -499,12 +507,16 @@ int main(int argc, char** argv)
             raw_info.white_level = MIN(raw_info.white_level + offset, 4095);
         }
 
+        int meta_gain = 0;
+
         if (has_metadata)
         {
             uint16_t registers[128];
             int r = fread(registers, 1, 256, fi);
             CHECK(r == 256, "fread");
             metadata_extract(registers);
+            
+            meta_gain = metadata_get_gain(registers);
             
             if (dump_regs)
             {
@@ -522,9 +534,13 @@ int main(int argc, char** argv)
         
         int16_t * raw16 = 0;
 
-        /* todo: use a dark frame for each gain setting */
-        int use_darkframe = !no_darkframe && file_exists("darkframe.pgm");
-        int use_gainframe = !no_gainframe && file_exists("gainframe.pgm");
+        char dark_filename[20];
+        char gain_filename[20];
+        snprintf(dark_filename, sizeof(dark_filename), "darkframe-x%d.pgm", meta_gain);
+        snprintf(gain_filename, sizeof(gain_filename), "gainframe-x%d.pgm", meta_gain);
+
+        int use_darkframe = !no_darkframe && meta_gain && file_exists_warn(dark_filename);
+        int use_gainframe = !no_gainframe && meta_gain && file_exists_warn(gain_filename);
 
         int raw16_postprocessing = (use_lut || use_darkframe || use_gainframe || fixpn);
         
@@ -543,18 +559,18 @@ int main(int argc, char** argv)
         if (use_darkframe)
         {
             /* fixme: LUTs should be applied after dark frame */
-            printf("Dark frame  : darkframe.pgm\n");
+            printf("Dark frame  : %s\n", dark_filename);
             int16_t * dark = malloc(raw_info.width * raw_info.height * sizeof(dark[0]));
-            read_reference_frame("darkframe.pgm", dark, &raw_info);
+            read_reference_frame(dark_filename, dark, &raw_info);
             subtract_dark_frame(&raw_info, raw16, dark);
             free(dark);
         }
 
         if (use_gainframe)
         {
-            printf("Gain frame  : gainframe.pgm\n");
+            printf("Gain frame  : %s\n", gain_filename);
             uint16_t * gain = malloc(raw_info.width * raw_info.height * sizeof(gain[0]));
-            read_reference_frame("gainframe.pgm", (int16_t*) gain, &raw_info);
+            read_reference_frame(gain_filename, (int16_t*) gain, &raw_info);
             apply_gain_frame(&raw_info, raw16, gain);
             free(gain);
         }
