@@ -86,7 +86,7 @@ struct cmd_group options[] = {
     },
     {
         "Debug options", (struct cmd_option[]) {
-            { &dump_regs,      1,                   "--dump-regs",          "Dump sensor registers from the metadata block" },
+            { &dump_regs,      1,                   "--dump-regs",          "Dump sensor registers from the metadata block (no output DNG)" },
             { &fixpn_flags1,   FIXPN_DBG_DENOISED,  "--fixpn-dbg-denoised", "Pattern noise: show denoised image" },
             { &fixpn_flags1,   FIXPN_DBG_NOISE,     "--fixpn-dbg-noise",    "Pattern noise: show noise image (original - denoised)" },
             { &fixpn_flags1,   FIXPN_DBG_MASK,      "--fixpn-dbg-mask",     "Pattern noise: show masked areas (edges and highlights)" },
@@ -504,7 +504,14 @@ int main(int argc, char** argv)
             uint16_t registers[128];
             int r = fread(registers, 1, 256, fi);
             CHECK(r == 256, "fread");
-            extract_metadata(registers, dump_regs);
+            metadata_extract(registers);
+            
+            if (dump_regs)
+            {
+                /* dump registers and skip the output file */
+                metadata_dump_registers(registers);
+                goto cleanup;
+            }
         }
 
         if (swap_lines)
@@ -568,8 +575,9 @@ int main(int argc, char** argv)
         /* save the DNG */
         printf("Output file : %s\n", out_filename);
         save_dng(out_filename, &raw_info);
+
+cleanup:
         fclose(fi);
-        
         free(raw); raw_info.buffer = 0;
     }
 

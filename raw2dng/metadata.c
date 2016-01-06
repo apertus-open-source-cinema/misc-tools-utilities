@@ -29,7 +29,7 @@ static uint16_t get_bits (uint16_t in, int offset, int length) {
     return in3;
 }
 
-static double get_exposure(uint16_t registers[128])
+double metadata_get_exposure(uint16_t registers[128])
 {
     double bits;
     switch (get_bits(registers[118], 0, 2)) {
@@ -55,7 +55,7 @@ static int get_div(uint16_t registers[128])
     return pga_div;
 }
 
-static int get_gain(uint16_t registers[128])
+int metadata_get_gain(uint16_t registers[128])
 {
     int pga_gain = get_bits(registers[115], 0, 3);
     switch (pga_gain)
@@ -73,7 +73,13 @@ static int get_gain(uint16_t registers[128])
     return 0;
 }
 
-static void dump_registers(uint16_t registers[128])
+int metadata_get_dark_offset(uint16_t registers[128])
+{
+    /* note: there is also register 88, but so far, they were set to the same value */
+    return registers[87];
+}
+
+void metadata_dump_registers(uint16_t registers[128])
 {
     const char * reg_names[128] = {
         [1]           = "Number_lines_tot",
@@ -163,13 +169,13 @@ static void dump_registers(uint16_t registers[128])
 }
 
 /* based on metadatareader.c */
-void extract_metadata(uint16_t registers[128], int dump_regs)
+void metadata_extract(uint16_t registers[128])
 {
-    double exposure_ms = get_exposure(registers);
+    double exposure_ms = metadata_get_exposure(registers);
     printf("Exposure    : %g ms\n", exposure_ms);
     dng_set_shutter((int)round(exposure_ms * 1000), 1000000);
 
-    int gain = get_gain(registers);
+    int gain = metadata_get_gain(registers);
     int div = get_div(registers);
 
     if (gain)
@@ -179,9 +185,7 @@ void extract_metadata(uint16_t registers[128], int dump_regs)
         /* this one is a really rough guess */
         dng_set_iso(400 * gain / (div ? 3 : 1));
     }
-
-    if (dump_regs)
-    {
-        dump_registers(registers);
-    }
+    
+    int offset = metadata_get_dark_offset(registers);
+    printf("Offset      : %d\n", offset);
 }
