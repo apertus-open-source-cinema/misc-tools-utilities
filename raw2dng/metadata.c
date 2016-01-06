@@ -189,3 +189,9 @@ void metadata_extract(uint16_t registers[128])
     int offset = metadata_get_dark_offset(registers);
     printf("Offset      : %d\n", offset);
 }
+
+void metadata_clear()
+{
+    dng_set_shutter(0, 1000000);
+    dng_set_iso(0);
+}

@@ -507,6 +507,8 @@ int main(int argc, char** argv)
             raw_info.white_level = MIN(raw_info.white_level + offset, 4095);
         }
 
+        metadata_clear();
+
         int meta_gain = 0;
 
         if (has_metadata)
