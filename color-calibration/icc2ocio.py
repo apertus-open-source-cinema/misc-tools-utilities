@@ -105,7 +105,7 @@ if len(sys.argv) != 2:
     print "Usage: %s file.icc" % sys.argv[0]
     raise SystemExit
 
-icc = run("/home/alex/src/Argyll_V1.8.3/bin/iccdump -v3 '%s'" % sys.argv[1])
+icc = run("iccdump -v3 '%s'" % sys.argv[1])
 
 profile = extract_profile(icc)
 
