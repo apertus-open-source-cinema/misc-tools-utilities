@@ -280,10 +280,11 @@ static void subtract_dark_frame(struct raw_info * raw_info, int16_t * raw16, int
 
 static void apply_gain_frame(struct raw_info * raw_info, int16_t * raw16, uint16_t * dark)
 {
+    int black = raw_info->black_level;
     int n = raw_info->width * raw_info->height;
     for (int i = 0; i < n; i++)
     {
-        raw16[i] = (int32_t) raw16[i] * dark[i] / 16384;
+        raw16[i] = MIN((int64_t)(raw16[i] - black) * dark[i] / 16384 + black, 32760);
     }
 }
 
