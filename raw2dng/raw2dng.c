@@ -418,10 +418,10 @@ static void hdmi_reorder(struct raw_info * raw_info)
             int i = (x/2 + y/2 * raw_info->width/2) * 4;
             
             /* src1 is RG, src2 is GB from source image (both on the same line) */
-            /* src1 is RG, src2 is GB from destination image (GB under RG) */
             struct raw12_twopix * src1 = (struct raw12_twopix *)(aux + i * sizeof(struct raw12_twopix) / 2);
             struct raw12_twopix * src2 = src1 + 1;
             
+            /* dst1 is RG, dst2 is GB from destination image (GB under RG) */
             /* note: we offset y by 1 because the rest of the code assumes [GB;RG] order */
             struct raw12_twopix * dst1 = (struct raw12_twopix *)(raw_info->buffer + (y+1) * raw_info->pitch + x * sizeof(struct raw12_twopix) / 2);
             struct raw12_twopix * dst2 = dst1 + raw_info->pitch / sizeof(struct raw12_twopix);
