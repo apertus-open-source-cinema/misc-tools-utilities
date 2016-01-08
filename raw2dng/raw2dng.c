@@ -55,6 +55,7 @@ int white_level = 4095;
 int image_width = 0;
 int image_height = 0;
 int swap_lines = 0;
+int hdmi_ramdump = 0;
 int use_lut = 0;
 int fixpn = 0;
 int fixpn_flags1 = 0;
@@ -77,6 +78,8 @@ struct cmd_group options[] = {
                              "                      - if input is stdin, default is 3072" },
             { &swap_lines,     1,  "--swap-lines", "Swap lines in the raw data\n"
                              "                      - workaround for an old Beta bug" },
+            { &hdmi_ramdump,   1,  "--hdmi",       "Assume the input is a memory dump\n"
+                             "                      used for HDMI recording experiments" },
             { &use_lut,        1,  "--lut",        "Linearize sensor response with per-channel LUTs\n"
                              "                      - probably correct only for one single camera :)" },
             { &fixpn,          1,  "--fixpn",      "Fix pattern noise (slow)" },
@@ -379,6 +382,58 @@ void reverse_lines_order(char* buf, int count, int width)
     free(aux);
 }
 
+static void hdmi_reorder(struct raw_info * raw_info)
+{
+    void* aux = malloc(raw_info->frame_size);
+    CHECK(aux, "malloc");
+    memcpy(aux, raw_info->buffer, raw_info->frame_size);
+
+    /**
+     * We have a 3840x2160 Bayer image split into 4 1920x1080 sub-images, interleaved:
+     * - raw buffer is 7680x1080
+     * - raw(:, 1:4:end) is red
+     * - raw(:, 2:4:end) is green1
+     * - raw(:, 3:4:end) is green2
+     * - raw(:, 4:4:end) is blue
+     *
+     * So, to re-arrange it, we will do the following mapping:
+     *
+     *   source    destination
+     * (RGGBRGGB) (Bayer RG;GB)
+     *     X Y      x y
+     * R: (0,0) -> (0,0)
+     * G: (1,0) -> (1,0)
+     * G: (2,0) -> (0,1)
+     * B: (3,0) -> (1,1)
+     * ...
+     * 
+     */
+    
+    /* handle one Bayer block at a time */
+    for (int y = 0; y < raw_info->height-2; y += 2)
+    {
+        for (int x = 0; x < raw_info->width; x += 2)
+        {
+            /* pixel position in source image */
+            int i = (x/2 + y/2 * raw_info->width/2) * 4;
+            
+            /* src1 is RG, src2 is GB from source image (both on the same line) */
+            /* src1 is RG, src2 is GB from destination image (GB under RG) */
+            struct raw12_twopix * src1 = (struct raw12_twopix *)(aux + i * sizeof(struct raw12_twopix) / 2);
+            struct raw12_twopix * src2 = src1 + 1;
+            
+            /* note: we offset y by 1 because the rest of the code assumes [GB;RG] order */
+            struct raw12_twopix * dst1 = (struct raw12_twopix *)(raw_info->buffer + (y+1) * raw_info->pitch + x * sizeof(struct raw12_twopix) / 2);
+            struct raw12_twopix * dst2 = dst1 + raw_info->pitch / sizeof(struct raw12_twopix);
+
+            *dst1 = *src1;
+            *dst2 = *src2;
+        }
+    }
+    
+    free(aux);
+}
+
 static int endswith(char* str, char* suffix)
 {
     int l1 = strlen(str);
@@ -460,7 +515,7 @@ int main(int argc, char** argv)
             continue;
         }
         
-        int width = image_width ? image_width : 4096;
+        int width = image_width ? image_width : hdmi_ramdump ? 1920*2 : 4096;
         int height = image_height;
         int has_metadata = 0;
         if (!height)
@@ -499,6 +554,12 @@ int main(int argc, char** argv)
         int r = fread(raw, 1, raw_info.frame_size, fi);
         CHECK(r == raw_info.frame_size, "fread");
         raw_info.buffer = raw;
+
+        if (hdmi_ramdump && black_level == 0xFFFF)
+        {
+            /* in the HDMI experiment, there were no black reference columns enabled */
+            black_level = 0;
+        }
 
         /* use black and white levels from command-line */
         raw_info.black_level = black_level;
@@ -545,6 +606,12 @@ int main(int argc, char** argv)
                 metadata_dump_registers(registers);
                 goto cleanup;
             }
+        }
+
+        if (hdmi_ramdump)
+        {
+            printf("HDMI reorder...\n");
+            hdmi_reorder(&raw_info);
         }
 
         if (swap_lines)
