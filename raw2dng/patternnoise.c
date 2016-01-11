@@ -337,9 +337,9 @@ static void fix_column_noise_rggb(int16_t * raw, int w, int h, int white)
     free(bs);
 }
 
-void fix_pattern_noise(struct raw_info * raw_info, int16_t * raw, int debug_flags)
+void fix_pattern_noise(struct raw_info * raw_info, int16_t * raw, int row_noise_only, int debug_flags)
 {
-    printf("Fixing pattern noise...\n");
+    printf("Fixing %s noise...\n", row_noise_only ? "row" : "pattern");
 
     /* assume Bayer order [GB;RG] */
     if (raw_info->cfa_pattern != 0x01000201)
@@ -360,12 +360,12 @@ void fix_pattern_noise(struct raw_info * raw_info, int16_t * raw, int debug_flag
     /* fix vertical noise, then transpose and repeat for the horizontal one */
     /* not very efficient, but at least avoids duplicate code */
     /* note: when debugging, we process only one direction */
-    if (!g_debug_flags || !(g_debug_flags & FIXPN_DBG_ROWNOISE))
+    if (!row_noise_only && (!g_debug_flags || !(g_debug_flags & FIXPN_DBG_ROWNOISE)))
     {
         fix_column_noise_rggb(raw, w, h, white);
     }
     
-    if (!g_debug_flags || (g_debug_flags & FIXPN_DBG_ROWNOISE))
+    if (row_noise_only || !g_debug_flags || (g_debug_flags & FIXPN_DBG_ROWNOISE))
     {
         /* transpose, process just like before, then transpose back */
         int16_t * raw_t = malloc(w * h * sizeof(raw[0]));

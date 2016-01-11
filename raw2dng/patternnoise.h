@@ -14,7 +14,8 @@
 #include "stdint.h"
 #include "raw.h"
 
-void fix_pattern_noise(struct raw_info * raw_info, int16_t * raw16, int debug_flags);
+void fix_pattern_noise(struct raw_info * raw_info, int16_t * raw16, int row_noise_only, int debug_flags);
+void highlight_blur(struct raw_info * raw_info, int16_t * raw);
 
 /* debug flags */
 #define FIXPN_DBG_COLNOISE  0

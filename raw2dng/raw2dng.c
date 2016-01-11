@@ -83,7 +83,8 @@ struct cmd_group options[] = {
                              "                      used for HDMI recording experiments" },
             { &use_lut,        1,  "--lut",        "Linearize sensor response with per-channel LUTs\n"
                              "                      - probably correct only for one single camera :)" },
-            { &fixpn,          1,  "--fixpn",      "Fix pattern noise (slow)" },
+            { &fixpn,          1,  "--fixrn",      "Fix row noise (slow)" },
+            { &fixpn,          2,  "--fixpn",      "Fix row and column noise, aka pattern noise (SLOW)" },
             { &no_darkframe,   1,  "--no-darkframe", "Disable dark frame (if darkframe.pgm is present)" },
             { &no_gainframe,   1,  "--no-gainframe", "Disable gain frame (if gainframe.pgm is present)" },
             { &no_clipframe,   1,  "--no-clipframe", "Disable clip frame (if clipframe.pgm is present)" },
@@ -718,7 +719,7 @@ int main(int argc, char** argv)
         if (fixpn)
         {
             int fixpn_flags = fixpn_flags1 | fixpn_flags2;
-            fix_pattern_noise(&raw_info, raw16, fixpn_flags);
+            fix_pattern_noise(&raw_info, raw16, fixpn == 1, fixpn_flags);
         }
 
         if (raw16_postprocessing)
