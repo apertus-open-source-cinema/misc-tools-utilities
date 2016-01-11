@@ -63,6 +63,7 @@ int fixpn_flags2 = 0;
 int dump_regs = 0;
 int no_darkframe = 0;
 int no_gainframe = 0;
+int no_clipframe = 0;
 
 struct cmd_group options[] = {
     {
@@ -85,6 +86,7 @@ struct cmd_group options[] = {
             { &fixpn,          1,  "--fixpn",      "Fix pattern noise (slow)" },
             { &no_darkframe,   1,  "--no-darkframe", "Disable dark frame (if darkframe.pgm is present)" },
             { &no_gainframe,   1,  "--no-gainframe", "Disable gain frame (if gainframe.pgm is present)" },
+            { &no_clipframe,   1,  "--no-clipframe", "Disable clip frame (if clipframe.pgm is present)" },
             OPTION_EOL,
         },
     },
@@ -292,6 +294,39 @@ static void apply_gain_frame(struct raw_info * raw_info, int16_t * raw16, uint16
     }
 }
 
+static void apply_clip_frame(struct raw_info * raw_info, int16_t * raw16, uint16_t * clip)
+{
+    /* todo: use median? */
+    double clip_avg;
+    int w = raw_info->width;
+    int h = raw_info->height;
+
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 8; x < w-8; x++)
+        {
+            clip_avg += clip[x + y*w];
+        }
+    }
+    clip_avg /= (w - 16) * h;
+    
+    /* fixme: magic numbers hardcoded for gain x1 */
+    int n = raw_info->width * raw_info->height;
+    for (int i = 0; i < n; i++)
+    {
+        if (raw16[i] > 2500 * 8)
+        {
+            /* subtract clip frame from clipped highlights, preserving the average value */
+            raw16[i] -= clip[i] - clip_avg;
+        }
+        else if (raw16[i] > 2000 * 8)
+        {
+            /* transition to clipped highlights (not sure it's the right way, but...) */
+            raw16[i] -= (clip[i] - clip_avg) * 500 / (raw16[i] - 2000);
+        }
+    }
+}
+
 static void apply_lut(struct raw_info * raw_info, int16_t * raw16)
 {
     /* the LUTs assume black level is 0 */
@@ -460,10 +495,12 @@ int main(int argc, char** argv)
         printf("  cat input.raw12 | %s output.dng [options]\n", argv[0]);
         printf("\n");
         printf("Flat field correction:\n");
-        printf(" - each gain requires two reference images (N=1,2,3,4):\n");
+        printf(" - for each gain, you may use 3 reference images (N=1,2,3,4):\n");
         printf(" - darkframe-xN.pgm will be subtracted (data is x8)\n");
         printf(" - gainframe-xN.pgm will be multiplied (1.0 = 16384)\n");
-        printf(" - reference images are 16-bit PGM, in the current directory.\n");
+        printf(" - clipframe-xN.pgm will be subtracted from highlights (x8)\n");
+        printf(" - reference images are 16-bit PGM, in the current directory\n");
+        printf(" - they are optional (you may use any or all of them).\n");
         printf("\n");
         show_commandline_help(argv[0]);
         return 0;
@@ -624,13 +661,17 @@ int main(int argc, char** argv)
 
         char dark_filename[20];
         char gain_filename[20];
+        char clip_filename[20];
         snprintf(dark_filename, sizeof(dark_filename), "darkframe-x%d.pgm", meta_gain);
         snprintf(gain_filename, sizeof(gain_filename), "gainframe-x%d.pgm", meta_gain);
+        snprintf(clip_filename, sizeof(clip_filename), "clipframe-x%d.pgm", meta_gain);
 
         int use_darkframe = !no_darkframe && meta_gain && file_exists_warn(dark_filename);
         int use_gainframe = !no_gainframe && meta_gain && file_exists_warn(gain_filename);
+        int use_clipframe = !no_clipframe && meta_gain && file_exists_warn(clip_filename);
 
-        int raw16_postprocessing = (use_lut || use_darkframe || use_gainframe || use_lut || fixpn);
+        int raw16_postprocessing =
+            (use_darkframe || use_gainframe || use_clipframe || use_lut || fixpn);
         
         if (raw16_postprocessing)
         {
@@ -642,7 +683,6 @@ int main(int argc, char** argv)
         
         if (use_darkframe)
         {
-            /* fixme: LUTs should be applied after dark frame */
             printf("Dark frame  : %s\n", dark_filename);
             int16_t * dark = malloc(raw_info.width * raw_info.height * sizeof(dark[0]));
             read_reference_frame(dark_filename, dark, &raw_info);
@@ -657,6 +697,16 @@ int main(int argc, char** argv)
             read_reference_frame(gain_filename, (int16_t*) gain, &raw_info);
             apply_gain_frame(&raw_info, raw16, gain);
             free(gain);
+        }
+
+        if (use_clipframe)
+        {
+            /* note: when computing the clip frame, you should also apply dark and gain frames to it */
+            printf("Clip frame  : %s\n", clip_filename);
+            uint16_t * clip = malloc(raw_info.width * raw_info.height * sizeof(clip[0]));
+            read_reference_frame(clip_filename, (int16_t*) clip, &raw_info);
+            apply_clip_frame(&raw_info, raw16, clip);
+            free(clip);
         }
         
         if (use_lut)
