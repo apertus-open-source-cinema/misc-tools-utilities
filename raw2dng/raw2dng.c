@@ -639,6 +639,11 @@ int main(int argc, char** argv)
                 goto cleanup;
             }
         }
+        else if (dump_regs)
+        {
+            printf("Metadata block not found.\n");
+            goto cleanup;
+        }
 
         if (hdmi_ramdump)
         {
