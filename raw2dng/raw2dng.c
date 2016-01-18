@@ -53,6 +53,9 @@ const uint16_t Lut_B [] = { 792,794,796,798,800,802,804,806,808,810,812,814,816,
    -3284, 10000,    11499, 10000,    1737, 10000, \
    -1283, 10000,     3550, 10000,    5967, 10000
 
+#define DARKFRAME_OFFSET 1024
+#define GAINFRAME_SCALING 16384
+
 /**
  * How much the dark frame average, after subtracting black reference columns, 
  * increases with exposure time and gain (DN / ms / gain);
@@ -291,10 +294,12 @@ static void read_reference_frame(char* filename, int16_t * buf, struct raw_info 
 
 static void subtract_dark_frame(struct raw_info * raw_info, int16_t * raw16, int16_t * dark)
 {
+    /* note: data in dark frames is multiplied by 8 (already done when promoting to raw16)
+     * and offset by DARKFRAME_OFFSET, to allow corrections below black level */
     int n = raw_info->width * raw_info->height;
     for (int i = 0; i < n; i++)
     {
-        raw16[i] -= dark[i];
+        raw16[i] -= (dark[i] - DARKFRAME_OFFSET);
     }
 }
 
@@ -304,7 +309,7 @@ static void apply_gain_frame(struct raw_info * raw_info, int16_t * raw16, uint16
     int n = raw_info->width * raw_info->height;
     for (int i = 0; i < n; i++)
     {
-        raw16[i] = MIN((int64_t)(raw16[i] - black) * dark[i] / 16384 + black, 32760);
+        raw16[i] = MIN((int64_t)(raw16[i] - black) * dark[i] / GAINFRAME_SCALING + black, 32760);
     }
 }
 
@@ -501,7 +506,7 @@ int main(int argc, char** argv)
         printf("\n");
         printf("Flat field correction:\n");
         printf(" - for each gain, you may use 3 reference images (N=1,2,3,4):\n");
-        printf(" - darkframe-xN.pgm will be subtracted (data is x8)\n");
+        printf(" - darkframe-xN.pgm will be subtracted (data is x8 + 1024)\n");
         printf(" - gainframe-xN.pgm will be multiplied (1.0 = 16384)\n");
         printf(" - clipframe-xN.pgm will be subtracted from highlights (x8)\n");
         printf(" - reference images are 16-bit PGM, in the current directory\n");
