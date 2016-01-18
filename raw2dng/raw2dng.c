@@ -96,7 +96,7 @@ struct cmd_group options[] = {
     },
     {
         "Debug options", (struct cmd_option[]) {
-            { &dump_regs,      1,                   "--dump-regs",          "Dump sensor registers from the metadata block (no output DNG)" },
+            { &dump_regs,      1,                   "--dump-regs",          "Dump sensor registers from metadata block (no output DNG)" },
             { &fixpn_flags1,   FIXPN_DBG_DENOISED,  "--fixpn-dbg-denoised", "Pattern noise: show denoised image" },
             { &fixpn_flags1,   FIXPN_DBG_NOISE,     "--fixpn-dbg-noise",    "Pattern noise: show noise image (original - denoised)" },
             { &fixpn_flags1,   FIXPN_DBG_MASK,      "--fixpn-dbg-mask",     "Pattern noise: show masked areas (edges and highlights)" },
@@ -110,7 +110,7 @@ struct cmd_group options[] = {
 struct raw_info raw_info;
 
 #define FAIL(fmt,...) { fprintf(stderr, "Error: "); fprintf(stderr, fmt, ## __VA_ARGS__); fprintf(stderr, "\n"); exit(1); }
-#define CHECK(ok, fmt,...) { if (!ok) FAIL(fmt, ## __VA_ARGS__); }
+#define CHECK(ok, fmt,...) { if (!(ok)) FAIL(fmt, ## __VA_ARGS__); }
 
 #define MIN(a,b) \
    ({ __typeof__ ((a)+(b)) _a = (a); \
@@ -737,7 +737,7 @@ cleanup:
         free(raw); raw_info.buffer = 0;
     }
 
-    printf("Done.\n");
+    printf("Done.\n\n");
     
     return 0;
 }
