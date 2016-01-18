@@ -77,6 +77,7 @@ int no_darkframe = 0;
 int no_gainframe = 0;
 int no_clipframe = 0;
 int no_blackcol = 0;
+int no_processing = 0;
 
 struct cmd_group options[] = {
     {
@@ -107,6 +108,8 @@ struct cmd_group options[] = {
             { &no_blackcol,    1, "--no-blackcol", "Disable black reference column subtraction\n"
                              "                      - enabled by default if a dark frame is used\n"
                              "                      - reduces row noise and black level variations" },
+            { &no_processing,  1, "--totally-raw", "Copy the raw data without any manipulation\n"
+                             "                      - metadata and pixel reordering are allowed." },
             OPTION_EOL,
         },
     },
@@ -813,6 +816,12 @@ int main(int argc, char** argv)
         
         int16_t * raw16 = 0;
 
+        if (no_processing)
+        {
+            /* skip all processing (except reordering) */
+            goto save_output;
+        }
+        
         char dark_filename[20];
         char gain_filename[20];
         char clip_filename[20];
@@ -894,6 +903,7 @@ int main(int argc, char** argv)
             free(raw16); raw16 = 0;
         }
         
+save_output:
         /* save the DNG */
         printf("Output file : %s\n", out_filename);
         save_dng(out_filename, &raw_info);
