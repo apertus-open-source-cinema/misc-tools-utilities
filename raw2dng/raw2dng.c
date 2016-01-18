@@ -79,9 +79,13 @@ int no_clipframe = 0;
 int no_blackcol = 0;
 int no_processing = 0;
 
+int calc_darkframe = 0;
+int calc_clipframe = 0;
+int calc_gainframe = 0;
+
 struct cmd_group options[] = {
     {
-        "Options", (struct cmd_option[]) {
+        "General options", (struct cmd_option[]) {
             { &black_level,    1, "--black=%d",    "Set black level (default: autodetect)\n"
                              "                      - negative values allowed" },
             { &white_level,    1, "--white=%d",    "Set white level (default: 4095)\n"
@@ -99,17 +103,23 @@ struct cmd_group options[] = {
                              "                      - probably correct only for one single camera :)" },
             { &fixpn,          1,  "--fixrn",      "Fix row noise (slow)" },
             { &fixpn,          2,  "--fixpn",      "Fix row and column noise, aka pattern noise (SLOW)" },
-            { (void*) &dark_current_avg,
-                            1, "--darkcurrent=%f", "Specify dark current average, (default: 0.05 DN/ms/gain)\n"
-                             "                      - used when detecting black level from black reference columns" },
-            { &no_darkframe,   1,  "--no-darkframe", "Disable dark frame (if darkframe.pgm is present)" },
-            { &no_gainframe,   1,  "--no-gainframe", "Disable gain frame (if gainframe.pgm is present)" },
-            { &no_clipframe,   1,  "--no-clipframe", "Disable clip frame (if clipframe.pgm is present)" },
-            { &no_blackcol,    1, "--no-blackcol", "Disable black reference column subtraction\n"
-                             "                      - enabled by default if a dark frame is used\n"
-                             "                      - reduces row noise and black level variations" },
             { &no_processing,  1, "--totally-raw", "Copy the raw data without any manipulation\n"
                              "                      - metadata and pixel reordering are allowed." },
+            OPTION_EOL,
+        },
+    },
+    {
+        "Flat field correction", (struct cmd_option[]) {
+            { &no_darkframe,   1,"--no-darkframe", "Disable dark frame (if darkframe.pgm is present)" },
+            { &no_gainframe,   1,"--no-gainframe", "Disable gain frame (if gainframe.pgm is present)" },
+            { &no_clipframe,   1,"--no-clipframe", "Disable clip frame (if clipframe.pgm is present)" },
+            { &no_blackcol,    1,"--no-blackcol",  "Disable black reference column subtraction\n"
+                             "                      - enabled by default if a dark frame is used\n"
+                             "                      - reduces row noise and black level variations" },
+
+            { &calc_darkframe,1,"--calc-darkframe","Average a dark frame from all input files" },
+            { &calc_gainframe,1,"--calc-gainframe","Average a gain frame (aka flat field frame)" },
+            { &calc_clipframe,1,"--calc-clipframe","Average a clip (overexposed) frame" },
             OPTION_EOL,
         },
     },
@@ -140,6 +150,8 @@ struct raw_info raw_info;
    ({ __typeof__ ((a)+(b)) _a = (a); \
       __typeof__ ((a)+(b)) _b = (b); \
      _a > _b ? _a : _b; })
+
+#define COUNT(x)        ((int)(sizeof(x)/sizeof((x)[0])))
 
 void raw_set_geometry(int width, int height, int skip_left, int skip_right, int skip_top, int skip_bottom)
 {
@@ -527,6 +539,258 @@ static void unpack12(struct raw_info * raw_info, int16_t * raw16)
     }
 }
 
+static void linear_fit(float* x, float* y, int n, float* a, float* b)
+{
+    /**
+     * plain least squares
+     * y = ax + b
+     * a = (mean(xy) - mean(x)mean(y)) / (mean(x^2) - mean(x)^2)
+     * b = mean(y) - a mean(x)
+     */
+    
+    double mx = 0, my = 0, mxy = 0, mx2 = 0;
+    for (int i = 0; i < n; i++)
+    {
+        mx += x[i];
+        my += y[i];
+        mxy += x[i] * y[i];
+        mx2 += x[i] * x[i];
+    }
+    mx /= n;
+    my /= n;
+    mxy /= n;
+    mx2 /= n;
+    *a = (mxy - mx*my) / (mx2 - mx*mx);
+    *b = my - (*a) * mx;
+}
+
+static struct
+{
+    int32_t * sum32;
+    int16_t * min16;
+    int16_t * max16;
+    int size;
+    int count;
+    int gain;
+    float exposures[1000];
+    float averages[1000];
+} A;
+
+static void calc_avgframe_addframe(struct raw_info * raw_info, int16_t * raw16, int meta_gain, float meta_expo)
+{
+    int n = raw_info->width * raw_info->height;
+    int new_frame_size = n * sizeof(A.sum32[0]);
+    
+    if (!A.sum32)
+    {
+        /* allocate memory on first call */
+        A.size = new_frame_size;
+        A.gain = meta_gain;
+        A.sum32 = malloc(A.size);
+        A.min16 = malloc(A.size/2);
+        A.max16 = malloc(A.size/2);
+        CHECK(A.sum32, "malloc");
+        CHECK(A.max16, "malloc");
+        CHECK(A.min16, "malloc");
+        
+        for (int i = 0; i < n; i++)
+        {
+            A.sum32[i] = 0;
+            A.min16[i] = INT16_MAX;
+            A.max16[i] = INT16_MIN;
+        }
+    }
+    
+    /* sanity checking */
+    CHECK(A.size == new_frame_size, "all frames must have the same resolution.")
+    CHECK(A.gain == meta_gain, "all frames must have the same gain setting.")
+    CHECK(A.count < COUNT(A.exposures), "too many frames")
+
+    /* find offset */
+    int offsets[4];
+    int avg_offset;
+    calc_black_columns_offset(raw_info, raw16, offsets, &avg_offset);
+
+    /* add current frame to accumulator */
+    for (int i = 0; i < n; i++)
+    {
+        int p = (int) raw16[i] - avg_offset;
+        A.sum32[i] += p;
+        A.max16[i] = MAX(A.max16[i], p);
+        A.min16[i] = MIN(A.min16[i], p);
+    }
+
+    /* compute average of current frame's active area */
+    int w = raw_info->width;
+    int h = raw_info->height;
+    double avg = 0;
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 8; x < w-8; x++)
+        {
+            int p = (int) raw16[x + y*w] - avg_offset;
+            avg += p;
+        }
+    }
+    avg /= h * (w-16);
+    
+    /* display values scaled back to 12-bit */
+    printf("Average     : %.4f + %d\n", avg/8, avg_offset/8);
+    
+    /* record exposure and mean of each image */
+    A.exposures[A.count] = meta_expo;
+    A.averages [A.count] = avg/8;
+    A.count++;
+}
+
+/* Output grayscale image to a 16-bit PGM file. */
+static void save_pgm(char* filename, struct raw_info * raw_info, int32_t * raw32)
+{
+    printf("Writing %s...\n", filename);
+
+    int w = raw_info->width;
+    int h = raw_info->height;
+    uint16_t* out = malloc(w * h * 2);
+
+    for (int y = 0; y < h; y ++)
+    {
+        for (int x = 0; x < w; x ++)
+        {
+            int p = raw32[x + y*w];
+            out[x + y*w] = ((p << 8) & 0xFF00) | ((p >> 8) & 0x00FF);
+        }
+    }
+
+    FILE* f = fopen(filename, "wb");
+    fprintf(f, "P5\n%d %d\n65535\n", w, h);
+
+    fwrite(out, 1, w * h * 2, f);
+
+    fclose(f);
+    free(out);
+}
+
+#define CALC_DARK_FRAME 0
+#define CALC_GAIN_FRAME 1
+#define CALC_CLIP_FRAME 2
+
+static void calc_avgframe_finish(char* out_filename, struct raw_info * raw_info, int type)
+{
+    CHECK(A.sum32, "invalid call to calc_avgframe_finish")
+    
+    int n = raw_info->width * raw_info->height;
+
+    int offset = (type == CALC_DARK_FRAME) ? DARKFRAME_OFFSET :
+                 (type == CALC_GAIN_FRAME) ? GAINFRAME_SCALING : 0 ;
+
+    for (int i = 0; i < n; i++)
+    {
+        if (A.count > 4)
+        {
+            /* cheap way to get rid of some outliers: subtract min/max values before averaging */
+            A.sum32[i] = (A.sum32[i] - A.min16[i] - A.max16[i] + A.count/2 - 1)
+                         / (A.count - 2) + offset;
+        }
+        else
+        {
+            /* not enough frames for min/max subtraction */
+            A.sum32[i] = (A.sum32[i] + A.count/2) / A.count + offset;
+        }
+    }
+
+    float expo_min = 1e10;
+    float expo_max = 0;
+    for (int i = 0; i < A.count; i++)
+    {
+        expo_min = MIN(expo_min, A.exposures[i]);
+        expo_max = MAX(expo_max, A.exposures[i]);
+    }
+
+    printf("\n");
+    printf("-----------------------------\n");
+    printf("\n");
+    printf("Averaged %d frames exposed from %.2f to %.2f ms.\n", A.count, expo_min, expo_max);
+
+    if (A.count < 4)
+    {
+        printf("You really need to average more frames (at least 16).\n");
+    }
+    else if (A.count < 16)
+    {
+        printf("Please consider averaging more frames (at least 16).\n");
+    }
+
+    /* for dark frames: compute dark current average, and adjust the dark frame to be a bias frame */
+    if (type == CALC_DARK_FRAME)
+    {
+        float dark_current, dark_offset;
+        linear_fit(A.exposures, A.averages, A.count, &dark_current, &dark_offset);
+        
+        if (!isfinite(dark_current))
+        {
+            printf("Could not compute dark current.\n");
+            printf("Please use different exposures, e.g. from 1 to 50 ms.\n");
+            dark_current = 0;
+        }
+        else
+        {
+            printf("Dark current: %.4f DN/ms\n", dark_current);
+        }
+
+        /* subtract average dark currents to get a "bias" frame */
+        dark_offset = 0;
+        for (int i = 0; i < A.count; i++)
+        {
+            dark_offset += A.exposures[i] * dark_current;
+        }
+        dark_offset /= A.count;
+        
+        int dark_off = (int)round(dark_offset);
+        printf("Dark offset : %.2f\n", dark_off/8.0);
+        for (int i = 0; i < n; i++)
+        {
+            A.sum32[i] -= dark_off;
+        }
+    }
+    
+    save_pgm(out_filename, raw_info, A.sum32);
+    
+    free(A.sum32);
+    free(A.max16);
+    free(A.min16);
+    A.sum32 = 0;
+    A.min16 = 0;
+    A.max16 = 0;
+    A.size = 0;
+    A.gain = 0;
+}
+
+static void calc_gainframe_do(struct raw_info * raw_info, int16_t * buf)
+{
+    /* we are going to fix the pattern noise,
+     * then compute the "difference" (well, ratio)
+     * and save it as a reference frame */
+    int n = raw_info->width * raw_info->height;
+    int frame_size = n * sizeof(buf[0]);
+    int16_t * fixed = malloc(frame_size);
+    CHECK(fixed, "malloc");
+    
+    memcpy(fixed, buf, frame_size);
+    fix_pattern_noise(raw_info, fixed, 0, 0);
+
+    /* note: gain is scaled by 16384 */
+    int w = raw_info->width;
+    for (int i = 0; i < n; i++)
+    {
+        int x = i % w;
+        buf[i] = (x < 8 || x >= w-8)
+               ? 16384                          /* do not touch black reference columns */
+               : fixed[i] * 16384.0 / buf[i];   /* assume pattern noise in midtones is gain (PRNU) */
+    }
+    
+    free(fixed);
+}
+
 /* pack raw data from 16-bit to 12-bit */
 /* this also adds some anti-posterization noise,
  * which acts somewhat like introducing one extra bit of detail */
@@ -651,6 +915,22 @@ int main(int argc, char** argv)
         printf(" - clipframe-xN.pgm will be subtracted from highlights (x8)\n");
         printf(" - reference images are 16-bit PGM, in the current directory\n");
         printf(" - they are optional, but gain/clip frames require a dark frame\n");
+        printf(" - black ref columns will also be subtracted if you use a dark frame.\n");
+        printf("\n");
+        printf("Creating reference images:\n");
+        printf(" - dark frames: average as many as practical, for each gain setting,\n");
+        printf("   with exposures ranging from around 1ms to 50ms:\n");
+        printf("        raw2dng --calc-darkframe *-gainx1-*.raw12 \n");
+        printf(" - gain frames: average as many as practical, for each gain setting,\n");
+        printf("   with a normally exposed blank OOF wall as target, or without lens\n");
+        printf("   (currently used for pattern noise reduction only):\n");
+        printf("        raw2dng --calc-gainframe *-gainx1-*.raw12 \n");
+        printf(" - clip frames: average as many as practical, for each gain setting,\n");
+        printf("   with a REALLY overexposed blank out-of-focus wall as target:\n");
+        printf("        raw2dng --calc-clipframe *-gainx1-*.raw12 \n");
+        printf(" - Always compute these frames in the order listed here\n");
+        printf("   (dark frames, then gain frames (optional), then clip frames (optional).\n");
+        
         printf("\n");
         show_commandline_help(argv[0]);
         return 0;
@@ -661,6 +941,10 @@ int main(int argc, char** argv)
         if (argv[k][0] == '-')
             parse_commandline_option(argv[k]);
     show_active_options();
+
+    char dark_filename[20];
+    char gain_filename[20];
+    char clip_filename[20];
 
     /* all other arguments are input or output files */
     for (int k = 1; k < argc; k++)
@@ -814,34 +1098,38 @@ int main(int argc, char** argv)
             reverse_lines_order(raw_info.buffer, raw_info.frame_size, raw_info.width);
         }
         
-        int16_t * raw16 = 0;
-
         if (no_processing)
         {
             /* skip all processing (except reordering) */
             goto save_output;
         }
         
-        char dark_filename[20];
-        char gain_filename[20];
-        char clip_filename[20];
+        int16_t * raw16 = 0;
+
         snprintf(dark_filename, sizeof(dark_filename), "darkframe-x%d.pgm", meta_gain);
         snprintf(gain_filename, sizeof(gain_filename), "gainframe-x%d.pgm", meta_gain);
         snprintf(clip_filename, sizeof(clip_filename), "clipframe-x%d.pgm", meta_gain);
 
         /* note: gain frame, clip frame and black column subtraction
          * are only enabled if we also use a dark frame */
-        int use_darkframe = !no_darkframe && meta_gain && file_exists_warn(dark_filename);
-        int use_gainframe = use_darkframe && !no_gainframe && meta_gain && file_exists_warn(gain_filename);
-        int use_clipframe = use_darkframe && !no_clipframe && meta_gain && file_exists_warn(clip_filename);
-
-        if (!use_darkframe)
+        int use_darkframe = !calc_darkframe &&                  
+                            !no_darkframe && meta_gain && file_exists_warn(dark_filename);
+        
+        int use_gainframe = !calc_gainframe && !calc_darkframe && use_darkframe &&
+                            !no_gainframe && meta_gain && file_exists_warn(gain_filename);
+        
+        int use_clipframe = !calc_clipframe && !calc_gainframe && !calc_darkframe && use_darkframe &&
+                            !no_clipframe && meta_gain && file_exists_warn(clip_filename);
+        
+        if (!use_darkframe && !calc_darkframe)
         {
             no_blackcol = 1;
         }
 
         int raw16_postprocessing =
-            (use_darkframe || use_gainframe || use_clipframe || use_lut || fixpn);
+            (calc_darkframe || calc_gainframe || calc_clipframe ||
+             use_darkframe  || use_gainframe  || use_clipframe  ||
+             use_lut || fixpn);
         
         if (raw16_postprocessing)
         {
@@ -896,13 +1184,35 @@ int main(int argc, char** argv)
             apply_lut(&raw_info, raw16);
         }
 
+        if (calc_darkframe || calc_gainframe || calc_clipframe)
+        {
+            if ((calc_gainframe || calc_clipframe) && !use_darkframe)
+            {
+                printf("Error: gain and clip frames require a dark frame.\n");
+                exit(1);
+            }
+            
+            if (calc_gainframe)
+            {
+                /* estimate gain from each frame, then average those estimations */
+                calc_gainframe_do(&raw_info, raw16);
+            }
+            
+            /* generic averaging routine */
+            calc_avgframe_addframe(&raw_info, raw16, meta_gain, meta_expo);
+            
+            /* no need to repack to 12 bits */
+            free(raw16); raw16 = 0;
+            goto cleanup;
+        }
+
         if (raw16_postprocessing)
         {
             /* processing done, repack the 16-bit data into 12-bit raw buffer */
             pack12(&raw_info, raw16);
             free(raw16); raw16 = 0;
         }
-        
+
 save_output:
         /* save the DNG */
         printf("Output file : %s\n", out_filename);
@@ -911,6 +1221,19 @@ save_output:
 cleanup:
         fclose(fi);
         free(raw); raw_info.buffer = 0;
+    }
+    
+    if (calc_darkframe)
+    {
+        calc_avgframe_finish(dark_filename, &raw_info, CALC_DARK_FRAME);
+    }
+    else if (calc_gainframe)
+    {
+        calc_avgframe_finish(gain_filename, &raw_info, CALC_GAIN_FRAME);
+    }
+    else if (calc_clipframe)
+    {
+        calc_avgframe_finish(clip_filename, &raw_info, CALC_CLIP_FRAME);
     }
 
     printf("Done.\n\n");
