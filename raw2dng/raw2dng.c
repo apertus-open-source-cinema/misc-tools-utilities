@@ -510,7 +510,7 @@ int main(int argc, char** argv)
         printf(" - gainframe-xN.pgm will be multiplied (1.0 = 16384)\n");
         printf(" - clipframe-xN.pgm will be subtracted from highlights (x8)\n");
         printf(" - reference images are 16-bit PGM, in the current directory\n");
-        printf(" - they are optional (you may use any or all of them).\n");
+        printf(" - they are optional, but gain/clip frames require a dark frame\n");
         printf("\n");
         show_commandline_help(argv[0]);
         return 0;
@@ -683,9 +683,10 @@ int main(int argc, char** argv)
         snprintf(gain_filename, sizeof(gain_filename), "gainframe-x%d.pgm", meta_gain);
         snprintf(clip_filename, sizeof(clip_filename), "clipframe-x%d.pgm", meta_gain);
 
+        /* note: gain frame and clip frame are only enabled if we also use a dark frame */
         int use_darkframe = !no_darkframe && meta_gain && file_exists_warn(dark_filename);
-        int use_gainframe = !no_gainframe && meta_gain && file_exists_warn(gain_filename);
-        int use_clipframe = !no_clipframe && meta_gain && file_exists_warn(clip_filename);
+        int use_gainframe = use_darkframe && !no_gainframe && meta_gain && file_exists_warn(gain_filename);
+        int use_clipframe = use_darkframe && !no_clipframe && meta_gain && file_exists_warn(clip_filename);
 
         int raw16_postprocessing =
             (use_darkframe || use_gainframe || use_clipframe || use_lut || fixpn);
