@@ -53,6 +53,12 @@ const uint16_t Lut_B [] = { 792,794,796,798,800,802,804,806,808,810,812,814,816,
    -3284, 10000,    11499, 10000,    1737, 10000, \
    -1283, 10000,     3550, 10000,    5967, 10000
 
+/**
+ * How much the dark frame average, after subtracting black reference columns, 
+ * increases with exposure time and gain (DN / ms / gain);
+ */
+float dark_current_avg = 0.05;
+
 int black_level = 0xFFFF;   /* autodetected from black reference columns */
 int white_level = 4095;
 int image_width = 0;
@@ -88,6 +94,9 @@ struct cmd_group options[] = {
                              "                      - probably correct only for one single camera :)" },
             { &fixpn,          1,  "--fixrn",      "Fix row noise (slow)" },
             { &fixpn,          2,  "--fixpn",      "Fix row and column noise, aka pattern noise (SLOW)" },
+            { (void*) &dark_current_avg,
+                            1, "--darkcurrent=%f", "Specify dark current average, (default: 0.05 DN/ms/gain)\n"
+                             "                      - used when detecting black level from black reference columns" },
             { &no_darkframe,   1,  "--no-darkframe", "Disable dark frame (if darkframe.pgm is present)" },
             { &no_gainframe,   1,  "--no-gainframe", "Disable gain frame (if gainframe.pgm is present)" },
             { &no_clipframe,   1,  "--no-clipframe", "Disable clip frame (if clipframe.pgm is present)" },
@@ -177,7 +186,7 @@ static void raw12_data_offset(void* buf, int frame_size, int offset)
  * otherwise the actual black level can be a few hundred units
  * higher than the black reference values (why?!)
  */
-static void raw12_detect_black_level(struct raw_info * raw_info)
+static void raw12_detect_black_level(struct raw_info * raw_info, int meta_gain, float meta_expo)
 {
     /* there are 8 black reference columns on each side */
     const int max_samples = 3072 * 16;
@@ -205,7 +214,8 @@ static void raw12_detect_black_level(struct raw_info * raw_info)
         }
     }
     
-    raw_info->black_level = median_int_wirth(samples, num_samples);
+    raw_info->black_level = median_int_wirth(samples, num_samples)
+        + (int)round(dark_current_avg * meta_gain * meta_expo);
     
     free(samples);
 }
@@ -587,6 +597,34 @@ int main(int argc, char** argv)
         CHECK(r == raw_info.frame_size, "fread");
         raw_info.buffer = raw;
 
+        metadata_clear();
+
+        int meta_gain = 0;
+        float meta_expo = 0;
+
+        if (has_metadata)
+        {
+            uint16_t registers[128];
+            int r = fread(registers, 1, 256, fi);
+            CHECK(r == 256, "fread");
+            metadata_extract(registers);
+            
+            meta_gain = metadata_get_gain(registers);
+            meta_expo = metadata_get_exposure(registers);
+            
+            if (dump_regs)
+            {
+                /* dump registers and skip the output file */
+                metadata_dump_registers(registers);
+                goto cleanup;
+            }
+        }
+        else if (dump_regs)
+        {
+            printf("Metadata block not found.\n");
+            goto cleanup;
+        }
+
         if (hdmi_ramdump && black_level == 0xFFFF)
         {
             /* in the HDMI experiment, there were no black reference columns enabled */
@@ -600,7 +638,7 @@ int main(int argc, char** argv)
         if (black_level == 0xFFFF)
         {
             /* black level not specified? autodetect from black reference columns */
-            raw12_detect_black_level(&raw_info);
+            raw12_detect_black_level(&raw_info, meta_gain, meta_expo);
         }
         
         printf("Black level : %d\n", raw_info.black_level);
@@ -617,32 +655,6 @@ int main(int argc, char** argv)
             raw12_data_offset(raw_info.buffer, raw_info.frame_size, offset);
             raw_info.black_level = 0;
             raw_info.white_level = MIN(raw_info.white_level + offset, 4095);
-        }
-
-        metadata_clear();
-
-        int meta_gain = 0;
-
-        if (has_metadata)
-        {
-            uint16_t registers[128];
-            int r = fread(registers, 1, 256, fi);
-            CHECK(r == 256, "fread");
-            metadata_extract(registers);
-            
-            meta_gain = metadata_get_gain(registers);
-            
-            if (dump_regs)
-            {
-                /* dump registers and skip the output file */
-                metadata_dump_registers(registers);
-                goto cleanup;
-            }
-        }
-        else if (dump_regs)
-        {
-            printf("Metadata block not found.\n");
-            goto cleanup;
         }
 
         if (hdmi_ramdump)
