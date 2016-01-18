@@ -61,3 +61,16 @@ static inline int kth_smallest_int(int a[], int n, int k)
 }
 
 #define median_int_wirth(a,n) kth_smallest_int(a,n,(((n)&1)?((n)/2):(((n)/2)-1)))
+
+/* slightly more accurate for even-sized arrays */
+static inline int median_int_wirth2(int a[], int n)
+{
+    if (n % 2 == 0)
+    {
+        return (kth_smallest_int(a,n,n/2-1) + kth_smallest_int(a,n,n/2)) / 2;
+    }
+    else
+    {
+        return median_int_wirth(a, n);
+    }
+}

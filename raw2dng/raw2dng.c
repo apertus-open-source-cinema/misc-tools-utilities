@@ -76,6 +76,7 @@ int dump_regs = 0;
 int no_darkframe = 0;
 int no_gainframe = 0;
 int no_clipframe = 0;
+int no_blackcol = 0;
 
 struct cmd_group options[] = {
     {
@@ -103,6 +104,9 @@ struct cmd_group options[] = {
             { &no_darkframe,   1,  "--no-darkframe", "Disable dark frame (if darkframe.pgm is present)" },
             { &no_gainframe,   1,  "--no-gainframe", "Disable gain frame (if gainframe.pgm is present)" },
             { &no_clipframe,   1,  "--no-clipframe", "Disable clip frame (if clipframe.pgm is present)" },
+            { &no_blackcol,    1, "--no-blackcol", "Disable black reference column subtraction\n"
+                             "                      - enabled by default if a dark frame is used\n"
+                             "                      - reduces row noise and black level variations" },
             OPTION_EOL,
         },
     },
@@ -221,6 +225,139 @@ static void raw12_detect_black_level(struct raw_info * raw_info, int meta_gain, 
         + (int)round(dark_current_avg * meta_gain * meta_expo);
     
     free(samples);
+}
+
+/* compute offset for odd/even rows, at left and right of the frame, and average offset */
+static void calc_black_columns_offset(struct raw_info * raw_info, int16_t * raw16, int offsets[4], int* avg_offset)
+{
+    int w = raw_info->width;
+    int h = raw_info->height;
+
+    int max_samples = h / 2;
+    int* samples[4];
+    for (int i = 0; i < 4; i++)
+    {
+        samples[i] = malloc(max_samples * sizeof(samples[0][0]));
+    }
+    int num_samples[4] = {0, 0, 0, 0};
+
+    for (int y = 0; y < h; y++)
+    {
+        /* by trial and error, it seems to minimize stdev(row_noise)
+         * if we compute median horizontally on every 8 columns,
+         * then median on odd/even rows from the resulting medians.
+         */
+        int row[8];
+        for (int x = 0; x < 8; x++)
+        {
+            row[x] = raw16[x + y*w];
+        }
+        samples[y%2][num_samples[y%2]++] = median_int_wirth2(row, 8);
+
+        for (int x = w-8; x < w; x++)
+        {
+            row[x-w+8] = raw16[x + y*w];
+        }
+        samples[2+y%2][num_samples[2+y%2]++] = median_int_wirth2(row, 8);
+    }
+
+    for (int i = 0; i < 4; i++)
+    {
+        offsets[i] = median_int_wirth2(samples[i], num_samples[i]);
+    }
+
+    for (int i = 0; i < 4; i++)
+    {
+        free(samples[i]);
+    }
+
+    *avg_offset = (offsets[0] + offsets[1] + offsets[2] + offsets[3] + 2) / 4;
+}
+
+static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
+{
+    int w = raw_info->width;
+    int h = raw_info->height;
+
+    int offsets[4];
+    int avg_offset;
+
+    calc_black_columns_offset(raw_info, raw16, offsets, &avg_offset);
+
+    printf("Even rows   : %d...%d\n", offsets[0]/8, offsets[2]/8);
+    printf("Odd rows    : %d...%d\n", offsets[1]/8, offsets[3]/8);
+    
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            int off_l = offsets[y%2];
+            int off_r = offsets[2 + y%2];
+            int off = off_l + (off_r - off_l) * x / w - avg_offset;
+            raw16[x + y*w] -= off;
+        }
+    }
+        
+    printf("Row noise from black columns...\n");
+    /**
+     * Do not subtract the full black column variations. Here's why:
+     * 
+     * Kalman filter theory: http://robocup.mi.fu-berlin.de/buch/kalman.pdf
+     * 
+     * From page 3, if we know how noisy our estimations are,
+     * the optimal weights are inversely proportional with the noise variances:
+     * 
+     * x_optimal = (x1 * var(x2) + x2 * var(x1)) / (var(x1) + var(x2))
+     * 
+     * Here, let's say R = x1 is row noise (stdev = 1.6 at gain=x1) and x2 is
+     * black column noise: B = mean(black_col') = R + x2 => x2 = B - R,
+     * x2 can be estimated as mean(black_col') - mean(active_area'),
+     * stdev(x2) = 1.3.
+     * 
+     * We want to find k that minimizes var(R - k*B).
+     * 
+     * var(R - k*B) = var(x1 * (1-k) - x2 * k),
+     * so k = var(x1)) / (var(x1) + var(x2).
+     */
+    /* fixme: values only valid for gain=x1 */
+    float row_noise_std = 1.6;
+    float black_col_noise_std = 1.3;
+    float blackcol_ratio = row_noise_std*row_noise_std /
+        (row_noise_std*row_noise_std + black_col_noise_std*black_col_noise_std);
+    
+    int* row_noise = malloc(h * sizeof(row_noise[0]));
+    
+    for (int y = 0; y < h; y++)
+    {
+        int acc = 0;
+        for (int x = 0; x < w; x++)
+        {
+            if (x == 8)
+            {
+                /* fast forward to the right side */
+                x = w - 8;
+            }
+            acc += raw16[x + y*w] - avg_offset;
+        }
+        row_noise[y] = round(acc * blackcol_ratio / 16);
+    }
+    
+    int acc = 0;
+    for (int y = 0; y < h; y++)
+    {
+        acc += row_noise[y];
+    }
+    int row_noise_mean = (acc + h/2) / h;
+
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            raw16[x + y*w] -= row_noise[y] - row_noise_mean;
+        }
+    }
+    
+    free(row_noise);
 }
 
 static void reverse_bytes_order(uint8_t* buf, int count)
@@ -683,10 +820,16 @@ int main(int argc, char** argv)
         snprintf(gain_filename, sizeof(gain_filename), "gainframe-x%d.pgm", meta_gain);
         snprintf(clip_filename, sizeof(clip_filename), "clipframe-x%d.pgm", meta_gain);
 
-        /* note: gain frame and clip frame are only enabled if we also use a dark frame */
+        /* note: gain frame, clip frame and black column subtraction
+         * are only enabled if we also use a dark frame */
         int use_darkframe = !no_darkframe && meta_gain && file_exists_warn(dark_filename);
         int use_gainframe = use_darkframe && !no_gainframe && meta_gain && file_exists_warn(gain_filename);
         int use_clipframe = use_darkframe && !no_clipframe && meta_gain && file_exists_warn(clip_filename);
+
+        if (!use_darkframe)
+        {
+            no_blackcol = 1;
+        }
 
         int raw16_postprocessing =
             (use_darkframe || use_gainframe || use_clipframe || use_lut || fixpn);
@@ -706,6 +849,11 @@ int main(int argc, char** argv)
             read_reference_frame(dark_filename, dark, &raw_info);
             subtract_dark_frame(&raw_info, raw16, dark);
             free(dark);
+        }
+
+        if (!no_blackcol)
+        {
+            subtract_black_columns(&raw_info, raw16);
         }
 
         if (use_gainframe)
