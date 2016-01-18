@@ -84,20 +84,18 @@ static void horizontal_gradient(int16_t * in, int16_t * out, int w, int h)
 static void horizontal_edge_aware_blur_rggb(
     int16_t * in_r,  int16_t * in_g1,  int16_t * in_g2,  int16_t * in_b,
     int16_t * out_r, int16_t * out_g1, int16_t * out_g2, int16_t * out_b,
-    int w, int h, int strength, int thr)
+    int w, int h, int edge_thr, int strength_lo, int strength_hi, int strength_thr)
 {
-    const int NMAX = 128;
+    const int NMAX = 256;
     int g1[NMAX];
     int g2[NMAX];
     int rg[NMAX];
     int bg[NMAX];
-    if (strength > NMAX)
+    if (MAX(strength_lo, strength_hi) > NMAX)
     {
         printf("FIXME: blur too strong\n");
         return;
     }
-
-    strength /= 2;
 
     /* precompute average green, red-green and blue-green */
     int16_t * avg_g  = malloc(w * h * sizeof(avg_g[0]));
@@ -113,6 +111,9 @@ static void horizontal_edge_aware_blur_rggb(
         {
             int p0 = avg_g[x + y*w];
             int num = 0;
+            
+            /* use different filter strength for highlights vs rest of the picture */
+            int strength = (p0 < strength_thr) ? strength_lo/2 : strength_hi/2;
 
             /* range of pixels similar to p0 */
             /* it will contain at least 1 pixel, and at most from 2*strength + 1 pixels */
@@ -123,7 +124,7 @@ static void horizontal_edge_aware_blur_rggb(
             while (xr < MIN(x + strength, w))
             {
                 int p = avg_g[xr + y*w];
-                if (abs(p - p0) > thr)
+                if (abs(p - p0) > edge_thr)
                     break;
                 xr++;
             }
@@ -132,7 +133,7 @@ static void horizontal_edge_aware_blur_rggb(
             while (xl >= MAX(x - strength, 0))
             {
                 int p = avg_g[xl + y*w];
-                if (abs(p - p0) > thr)
+                if (abs(p - p0) > edge_thr)
                     break;
                 xl--;
             }
@@ -165,14 +166,15 @@ static void horizontal_edge_aware_blur_rggb(
 /* Find and apply a scalar offset to each column, to reduce pattern noise */
 /* original: input and output */
 /* denoised: input only */
-static void fix_column_noise(int16_t * original, int16_t * denoised, int w, int h, int white)
+static void fix_column_noise(int16_t * original, int16_t * denoised, int w, int h, int clip_thr, int nonlinear_highlights)
 {
     /* let's say the difference between original and denoised is mostly noise */
     int16_t * noise = malloc(w * h * sizeof(noise[0]));
     subtract(original, denoised, noise, w, h);
 
     /* from this noise, keep the FPN part (constant offset for each line/column) */
-    int* col_offsets = malloc(w * sizeof(col_offsets[0]));
+    int col_offsets_size = w * sizeof(int);
+    int* col_offsets = malloc(col_offsets_size);
     int* noise_row = malloc(MAX(w,h) * sizeof(noise_row[0]));
     int  noise_row_num = 0;
 
@@ -191,7 +193,9 @@ static void fix_column_noise(int16_t * original, int16_t * denoised, int w, int 
 
             mask[x + y*w] = 
                 (hgradient > 500) ||   /* mask out pixels on a strong edge, that is clearly not pattern noise */
-                (pixel >= white);      /* mask out bright pixels (caveat: you really need to set the correct white level for this to work) */
+                (nonlinear_highlights ? /* row noise is very different in nonlinear (nearly clipped) highlights, compared to the rest of the image */
+                       pixel <= clip_thr : /* NL highlights: mask out normally-exposed areas */ 
+                       pixel > clip_thr ); /* regular image: mask out nearly-overexposed pixels */
         }
     }
 
@@ -236,24 +240,25 @@ static void fix_column_noise(int16_t * original, int16_t * denoised, int w, int 
 
         col_offsets[x] = offset;
     }
+
+    /* remove median from offsets, to prevent color cast */
+    /* note: median modifies the array, so we allocate a copy */
+    int* col_offsets_copy = malloc(col_offsets_size);
+    memcpy(col_offsets_copy, col_offsets, col_offsets_size);
+    int mc = median_int_wirth(col_offsets_copy, w);
+    free(col_offsets_copy);
     
     /* almost done, now apply the offsets */
     for (int y = 0; y < h; y++)
     {
         for (int x = 0; x < w; x++)
         {
-            original[x + y*w] = COERCE((int)original[x + y*w] + col_offsets[x], -32767, 32767);
+            int pixel = original[x + y*w];
+            if (nonlinear_highlights ? pixel > clip_thr : pixel <= clip_thr)
+            {
+                original[x + y*w] = COERCE((int)original[x + y*w] + col_offsets[x] - mc, -32767, 32760);
+            }
         }
-    }
-
-    /* remove median from offsets, to prevent color cast */
-    /* note: median modifies the array, so we do this after applying the offsets to the image */
-    int mc = median_int_wirth(col_offsets, w);
-    
-    for (int i = 0; i < w*h; i++)
-    {
-        /* FIXME: clamping to 32766 causes overflow */
-        original[i] = COERCE((int)original[i] - mc, 0, 32760);
     }
 
 end:
@@ -309,16 +314,27 @@ static void fix_column_noise_rggb(int16_t * raw, int w, int h, int white)
     extract_channel(raw, g1, w, h, 0, 0);
     extract_channel(raw, g2, w, h, 1, 1);
     extract_channel(raw, b,  w, h, 1, 0);
+
+    /* fixme: hardcoded for gain=1 */
+    int clip_thr = 2500*8;
     
     /* strong horizontal denoising (1-D median blur on G, R-G and B-G, stop on edge */
     /* (this step takes a lot of time) */
-    horizontal_edge_aware_blur_rggb(r, g1, g2, b, rs, g1s, g2s, bs, w/2, h/2, 50, 500);
+    horizontal_edge_aware_blur_rggb(r, g1, g2, b, rs, g1s, g2s, bs, w/2, h/2, 500, 50, 250, clip_thr);
+    printf("."); fflush(stdout);
 
     /* after blurring horizontally, the difference reveals vertical FPN */
-    fix_column_noise(r,  rs,  w/2, h/2, white);
-    fix_column_noise(g1, g1s, w/2, h/2, white);
-    fix_column_noise(g2, g2s, w/2, h/2, white);
-    fix_column_noise(b,  bs,  w/2, h/2, white);
+
+    /* fix for both highlights and normally-exposed images */
+    /* (could be probably optimized for speed a bit) */
+    for (int hl = 0; hl <= 1; hl++)
+    {
+        fix_column_noise(r,  rs,  w/2, h/2, clip_thr, hl);
+        fix_column_noise(g1, g1s, w/2, h/2, clip_thr, hl);
+        fix_column_noise(g2, g2s, w/2, h/2, clip_thr, hl);
+        fix_column_noise(b,  bs,  w/2, h/2, clip_thr, hl);
+    }
+    printf("."); fflush(stdout);
 
     /* commit changes */
     set_channel(raw, r,  w, h, 0, 1);
@@ -339,7 +355,8 @@ static void fix_column_noise_rggb(int16_t * raw, int w, int h, int white)
 
 void fix_pattern_noise(struct raw_info * raw_info, int16_t * raw, int row_noise_only, int debug_flags)
 {
-    printf("Fixing %s noise...\n", row_noise_only ? "row" : "pattern");
+    printf("Fixing %s noise", row_noise_only ? "row" : "pattern");
+    fflush(stdout);
 
     /* assume Bayer order [GB;RG] */
     if (raw_info->cfa_pattern != 0x01000201)
@@ -374,4 +391,6 @@ void fix_pattern_noise(struct raw_info * raw_info, int16_t * raw, int row_noise_
         transpose(raw_t, raw, h, w);
         free(raw_t);
     }
+    
+    printf("\n");
 }
