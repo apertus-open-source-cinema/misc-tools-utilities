@@ -965,7 +965,7 @@ int main(int argc, char** argv)
             /* replace input file extension with .DNG */
             static char fo[256];
             snprintf(fo, sizeof(fo), "%s", argv[k]);
-            char* ext = strchr(fo, '.');
+            char* ext = strrchr(fo, '.');
             if (!ext) ext = fo + strlen(fo) - 4;
             ext[0] = '.';
             ext[1] = 'D';
