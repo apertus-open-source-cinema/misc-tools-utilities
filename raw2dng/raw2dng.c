@@ -468,7 +468,7 @@ static void apply_gain_frame(struct raw_info * raw_info, int16_t * raw16, uint16
 static void apply_clip_frame(struct raw_info * raw_info, int16_t * raw16, uint16_t * clip)
 {
     /* todo: use median? */
-    double clip_avg;
+    double clip_avg = 0;
     int w = raw_info->width;
     int h = raw_info->height;
 
