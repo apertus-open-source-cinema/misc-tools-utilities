@@ -110,9 +110,9 @@ struct cmd_group options[] = {
     },
     {
         "Flat field correction", (struct cmd_option[]) {
-            { &no_darkframe,   1,"--no-darkframe", "Disable dark frame (if darkframe.pgm is present)" },
-            { &no_gainframe,   1,"--no-gainframe", "Disable gain frame (if gainframe.pgm is present)" },
-            { &no_clipframe,   1,"--no-clipframe", "Disable clip frame (if clipframe.pgm is present)" },
+            { &no_darkframe,   1,"--no-darkframe", "Disable dark frame (if darkframe-xN.pgm is present)" },
+            { &no_gainframe,   1,"--no-gainframe", "Disable gain frame (if gainframe-xN.pgm is present)" },
+            { &no_clipframe,   1,"--no-clipframe", "Disable clip frame (if clipframe-xN.pgm is present)" },
             { &no_blackcol,    1,"--no-blackcol",  "Disable black reference column subtraction\n"
                              "                      - enabled by default if a dark frame is used\n"
                              "                      - reduces row noise and black level variations" },
