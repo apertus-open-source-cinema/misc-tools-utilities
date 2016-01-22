@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <UFRaw Version='7'>
-<InputFilename>/home/alex/src/apertus/misc-tools-utilities/nonlinear-highlights/it8-gainx1-offset2047-80ms-02.DNG</InputFilename>
-<OutputFilename>/home/alex/src/apertus/misc-tools-utilities/nonlinear-highlights/it8-gainx1-offset2047-80ms-02.jpg</OutputFilename>
+<InputFilename>it8-gainx1-offset2047-80ms-02.DNG</InputFilename>
+<OutputFilename>it8-gainx1-offset2047-80ms-02.jpg</OutputFilename>
 <OutputPath>.</OutputPath>
   <WB>Manual WB</WB>
   <WBFineTuning>0</WBFineTuning>
