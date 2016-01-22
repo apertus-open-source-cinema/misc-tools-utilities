@@ -3,34 +3,70 @@
 % This computes a set of LUTs for recovering highlights
 % from the nonlinear region of the sensor response curve
 % (in other words, highlights that would otherwise be clipped to white)
-% 
-% Input files can be downloaded from http://files.apertus.org/AXIOM-Beta/snapshots/
-% You will also need a dark frame (average as many as you find practical)
-% and what I call a "clip frame" (completely overexposed image of a blank wall,
-% averaged and with dark frame subtracted). Save the frames with:
-% imwrite(uint16(dark*8,'darkframe-x1.pgm')); imwrite(uint16(clip*8,'clipframe-x1.pgm'));
-% See raw2dng help for more info about these files.
 %
-% You need a custom compilation of octave + GraphicsMagick to allow 16-bit images, btw.
+% You will need:
+% - a custom compilation of octave to allow 16-bit images
+%   ( http://marcelojoeng.blogspot.com/2012/11/compile-octave-using-1632-bits-colour.html )
+% - splines package - http://octave.sourceforge.net/splines/
+% - ufraw
+% - input files will be downloaded from files.apertus.org
 
 % we need this to use csaps
 pkg load splines
 more off
 
+% get files not included in repo
+if ~exist('it8-gainx1-offset2047-80ms-02.raw12', 'file')
+    system('wget http://files.apertus.org/AXIOM-Beta/snapshots/IT8%20Charts%20Nikon-08.01.2016/it8-gainx1-offset2047-80ms-02.raw12')
+end
+if ~exist('it8-gainx1-offset2047-20ms-02.raw12', 'file')
+    system('wget http://files.apertus.org/AXIOM-Beta/snapshots/IT8%20Charts%20Nikon-08.01.2016/it8-gainx1-offset2047-20ms-02.raw12')
+end
+if ~exist('R131007.txt', 'file')
+    system('wget http://files.apertus.org/AXIOM-Beta/snapshots/colorcharts/IT8/R131007.txt')
+end
+if ~exist('darkframe-x1.pgm', 'file')
+    system('wget http://files.apertus.org/AXIOM-Beta/snapshots/darkframe-x1.pgm')
+end
+if ~exist('clipframe-x1.pgm', 'file')
+    system('wget http://files.apertus.org/AXIOM-Beta/snapshots/clipframe-x1.pgm')
+end
+
 % read IT8 reference data
-[xyz_ref, gxyz_ref] = read_it8('R131007.txt', 1);
+disp('Reading IT8 data...');
+[xyz_ref, gxyz_ref] = read_it8('R131007.txt');
 
 % sample IT8 data from properly-exposed and overexposed charts
-system('raw2dng it8-gainx1-offset2047-20ms-02.raw12 --swap-lines');
-system('raw2dng it8-gainx1-offset2047-80ms-02.raw12 --swap-lines');
-[Cg_ref,Cc_ref] = sample_it8('it8-gainx1-offset2047-20ms-02.DNG');
-[Cg_ovr,Cc_ovr] = sample_it8('it8-gainx1-offset2047-80ms-02.DNG');
+% this step is slow, so only run it once
+if ~exist('Cg_ref', 'var')
+    disp('Rendering test files without LUT...');
+    system('raw2dng it8-gainx1-offset2047-20ms-02.raw12 --swap-lines --fixrn');
+    system('raw2dng it8-gainx1-offset2047-80ms-02.raw12 --swap-lines --fixrn');
+    [Cg_ref,Cc_ref] = sample_it8('it8-gainx1-offset2047-20ms-02.DNG', 0);
+    [Cg_ovr,Cc_ovr] = sample_it8('it8-gainx1-offset2047-80ms-02.DNG', 0);
+end
 
 % compute LUTs
+disp('Computing LUT...');
 lut = it8_luts(Cg_ref,Cc_ref,Cg_ovr,Cc_ovr,gxyz_ref);
 
-% Now copy the LUTs from the console into raw2dng, compile it,
-% and try: raw2dng overexposed-gainx1-80ms.raw12 --swap-lines --lut --fixrn
-%
-% You may want to fiddle with the row noise reduction algorithm,
-% or fine-tune the LUTs. Have fun!
+% save lut
+disp('Saving LUT...');
+f = fopen('lut-x1.spi1d', 'w');
+fprintf(f, 'Version 1\n');
+fprintf(f, 'From 0.0 1.0\n');
+fprintf(f, 'Length 4096\n');
+fprintf(f, 'Components 4\n');
+fprintf(f, '{\n');
+for i = 1:size(lut,2)
+    fprintf(f, '    %f %f %f %f\n', min(lut(:,i), 4095) / 4095);
+end
+fprintf(f, '}\n');
+fclose(f);
+
+disp('Rendering test files with LUT...');
+system('raw2dng it8-gainx1-offset2047-20ms-02.raw12 --swap-lines --fixrn --lut');
+system('raw2dng it8-gainx1-offset2047-80ms-02.raw12 --swap-lines --fixrn --lut');
+system('ufraw-batch it8-gainx1-offset2047-80ms-02.ufraw --overwrite');
+
+%~ disp('Done.');

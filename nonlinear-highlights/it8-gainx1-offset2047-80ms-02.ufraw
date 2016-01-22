@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UFRaw Version='7'>
+<InputFilename>/home/alex/src/apertus/misc-tools-utilities/nonlinear-highlights/it8-gainx1-offset2047-80ms-02.DNG</InputFilename>
+<OutputFilename>/home/alex/src/apertus/misc-tools-utilities/nonlinear-highlights/it8-gainx1-offset2047-80ms-02.jpg</OutputFilename>
+<OutputPath>.</OutputPath>
+  <WB>Manual WB</WB>
+  <WBFineTuning>0</WBFineTuning>
+  <Temperature>4288</Temperature>
+  <Green>1.079</Green>
+  <ChannelMultipliers>1.2971 1.0000 1.4611 1.0000</ChannelMultipliers>
+<Exposure>1.000000</Exposure>
+<RestoreDetails>hsv</RestoreDetails>
+<ClipHighlights>digital</ClipHighlights>
+<AutoCrop>1</AutoCrop>
+<Saturation>1.500000</Saturation>
+<Shrink>2</Shrink>
+<OutputType>4</OutputType>
+<CreateID>1</CreateID>
+<EmbedExif>0</EmbedExif>
+<Compression>99</Compression>
+<Overwrite>1</Overwrite>
+<BaseLinearCurve Current='yes'>
+</BaseLinearCurve>
+<LinearCurve Current='yes'>
+</LinearCurve>
+<MatrixInputProfile Current='yes'>Color matrix
+</MatrixInputProfile>
+<sRGBOutputProfile Current='yes'>sRGB
+</sRGBOutputProfile>
+<Make>Apertus</Make>
+<Model>AXIOM Beta</Model>
+<Timestamp>Thu Jan  1 00:00:00 1970</Timestamp>
+<Orientation>0</Orientation>
+<ISOSpeed>400</ISOSpeed>
+<Shutter>1/10 s</Shutter>
+<Aperture>F0</Aperture>
+<FocalLength>0.0 mm</FocalLength>
+<FocalLength35>Unknown</FocalLength35>
+<EXIFSource>exiv2 0.24</EXIFSource>
+<Crop>0 0 4096 3072</Crop>
+<AspectRatio>1.333333</AspectRatio>
+<Rotation>0.000000</Rotation>
+<Log>
+ufraw_open: w:4096 h:3072 curvesize:0
+EXIF data read using exiv2, buflen 1084
+
+Scaling with darkness 150, saturation 4095, and
+multipliers 1.000000 0.473635 0.759030 0.473635
+Loading Apertus AXIOM Beta image from ./it8-gainx1-offset2047-80ms-02.DNG ...
+Black: 150, Maximum: 4095
+</Log>
+</UFRaw>

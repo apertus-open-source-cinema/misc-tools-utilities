@@ -1,30 +1,32 @@
-function [Cg,Cc] = sample_it8(filename)
+function [Cg,Cc] = sample_it8(filename, should_plot)
     marks = [376,329,1817,333,1816,1179,365,1164];
     im = read_raw(filename);
     im = im(2:end-1,:);
     
-    clf
-    show_raw(im, 145, 4095);
-    hold on;
+    if should_plot,
+        clf
+        show_raw(im, 145, 4095);
+        hold on;
+    end
     
     % extract bottom gray line
     Lx = linspace(-0.003,1.003,25) - 0.001;
     Lx = (Lx(1:end-1) + Lx(2:end)) / 2;
     [x,y] = xform(Lx, 1.075 * ones(size(Lx)), marks);
     r = (x(2)-x(1)) / 3.5;
-    Cg = extract_colors(im, x, y, r, r*2, 'g', 1);
+    Cg = extract_colors(im, x, y, r, r*2, 'g', 1, should_plot);
 
     % extract middle gray column
     Ly = linspace(-0.003,1.003,15);
     Ly = (Ly(1:end-1) + Ly(2:end)) / 2;
     [x,y] = xform(Lx(17) * ones(size(Ly(2:end-1))), Ly(2:end-1), marks);
-    Cg2 = extract_colors(im, x, y, r, r, 'c', 1);
+    Cg2 = extract_colors(im, x, y, r, r, 'c', 1, should_plot);
     Cg = [Cg2; Cg];
     
     % extract color data
     [xx,yy] = meshgrid(Lx([2:16 18:end-1]), Ly(2:end-1));
     [x,y] = xform(xx, yy, marks);
-    Cc = extract_colors(im, x, y, r, r, 'r', 1);
+    Cc = extract_colors(im, x, y, r, r, 'r', 1, should_plot);
     drawnow;
 end
 
@@ -35,7 +37,7 @@ function [r,g1,g2,b] = raw_to_rggb(im)
     b  = im(2:2:end,2:2:end);
 end
 
-function C = extract_colors(im, X, Y, rx, ry, marker_color, rggb)
+function C = extract_colors(im, X, Y, rx, ry, marker_color, rggb, should_plot)
     C = [];
     
     % convert raw data to rgb (without debayering, just half-res)
@@ -46,7 +48,9 @@ function C = extract_colors(im, X, Y, rx, ry, marker_color, rggb)
     % extract color patches and compute median color
     for i = 1:length(X)
         x = X(i); y = Y(i);
-        if ishold, plot([x - rx, x + rx, x + rx, x - rx, x - rx], [y - ry, y - ry, y + ry, y + ry, y - ry], marker_color), end
+        if should_plot,
+            plot([x - rx, x + rx, x + rx, x - rx, x - rx], [y - ry, y - ry, y + ry, y + ry, y - ry], marker_color),
+        end
         r  = R (y-ry:y+ry, x-rx:x+rx);
         g1 = G1(y-ry:y+ry, x-rx:x+rx);
         g2 = G2(y-ry:y+ry, x-rx:x+rx);

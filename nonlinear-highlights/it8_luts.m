@@ -26,12 +26,6 @@ function lut = it8_luts(Cg_ref,Cc_ref,Cg_ovr,Cc_ovr,gxyz_ref)
     for i = 1:4
         lut(i,:)  = offset_lut(lut(i,:),  B_ref(i), B_ovr(i));
     end
-
-    % print the LUTs to console (copy/paste to raw2dng)
-    disp(['const uint16_t Lut_R [] = { ' sprintf('%d,', round(lut(1,:) * 8)) ' }; ' ]);
-    disp(['const uint16_t Lut_G1[] = { ' sprintf('%d,', round(lut(2,:) * 8)) ' }; ' ]);
-    disp(['const uint16_t Lut_G2[] = { ' sprintf('%d,', round(lut(3,:) * 8)) ' }; ' ]);
-    disp(['const uint16_t Lut_B [] = { ' sprintf('%d,', round(lut(4,:) * 8)) ' }; ' ]);
 end
 
 function lut = offset_lut(lut, b_ref, b_ovr)
