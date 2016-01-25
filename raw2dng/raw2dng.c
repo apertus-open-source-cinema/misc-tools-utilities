@@ -453,7 +453,7 @@ static void subtract_dark_frame(struct raw_info * raw_info, int16_t * raw16, int
     {
         if (dcnu)
         {
-            float dc = (float) (dcnu[i] - DCNUFRAME_OFFSET) / DCNUFRAME_SCALING;
+            float dc = (float) (dcnu[i] - DCNUFRAME_OFFSET) * 8 / DCNUFRAME_SCALING;
             offset = extra_offset - DARKFRAME_OFFSET + (int)roundf(dc * meta_expo);
         }
 
@@ -1369,8 +1369,8 @@ int main(int argc, char** argv)
             }
             else
             {
-                int dark_current = (int) roundf(dark_current_avg * meta_gain * meta_expo);
-                printf("Dark current: %d\n", dark_current);
+                int dark_current = (int) roundf(dark_current_avg * meta_gain * meta_expo * 8);
+                printf("Dark current: %d\n", dark_current/8);
                 extra_offset = dark_current;
             }
 
