@@ -47,6 +47,8 @@ static int16_t Lut_B[4096*8];
 
 #define DARKFRAME_OFFSET 1024
 #define GAINFRAME_SCALING 16384
+#define DCNUFRAME_OFFSET 8192
+#define DCNUFRAME_SCALING 8192
 
 /**
  * How much the dark frame average, after subtracting black reference columns, 
@@ -66,6 +68,7 @@ int fixpn_flags1 = 0;
 int fixpn_flags2 = 0;
 int dump_regs = 0;
 int no_darkframe = 0;
+int no_dcnuframe = 0;
 int no_gainframe = 0;
 int no_clipframe = 0;
 int no_blackcol = 0;
@@ -74,6 +77,7 @@ int no_processing = 0;
 int calc_darkframe = 0;
 int calc_clipframe = 0;
 int calc_gainframe = 0;
+int calc_dcnuframe = 0;
 
 struct cmd_group options[] = {
     {
@@ -102,6 +106,7 @@ struct cmd_group options[] = {
     {
         "Flat field correction", (struct cmd_option[]) {
             { &no_darkframe,   1,"--no-darkframe", "Disable dark frame (if darkframe-xN.pgm is present)" },
+            { &no_dcnuframe,   1,"--no-dcnuframe", "Disable dark current frame (if dcnuframe-xN.pgm is present)" },
             { &no_gainframe,   1,"--no-gainframe", "Disable gain frame (if gainframe-xN.pgm is present)" },
             { &no_clipframe,   1,"--no-clipframe", "Disable clip frame (if clipframe-xN.pgm is present)" },
             { &no_blackcol,    1,"--no-blackcol",  "Disable black reference column subtraction\n"
@@ -109,6 +114,9 @@ struct cmd_group options[] = {
                              "                      - reduces row noise and black level variations" },
 
             { &calc_darkframe,1,"--calc-darkframe","Average a dark frame from all input files" },
+            { &calc_dcnuframe,1,"--calc-dcnuframe","Fit a dark frame (constant offset) and a dark current frame\n"
+                             "                      (exposure-dependent offset) from files with different exposures\n"
+                             "                      (starting point: 256 frames with exposures from 1 to 50 ms)" },
             { &calc_gainframe,1,"--calc-gainframe","Average a gain frame (aka flat field frame)" },
             { &calc_clipframe,1,"--calc-clipframe","Average a clip (overexposed) frame" },
             OPTION_EOL,
@@ -199,7 +207,7 @@ static void raw12_data_offset(void* buf, int frame_size, int offset)
  * otherwise the actual black level can be a few hundred units
  * higher than the black reference values (why?!)
  */
-static void raw12_detect_black_level(struct raw_info * raw_info, int meta_gain, float meta_expo)
+static void raw12_detect_black_level(struct raw_info * raw_info)
 {
     /* there are 8 black reference columns on each side */
     const int max_samples = 3072 * 16;
@@ -227,8 +235,7 @@ static void raw12_detect_black_level(struct raw_info * raw_info, int meta_gain, 
         }
     }
     
-    raw_info->black_level = median_int_wirth(samples, num_samples)
-        + (int)round(dark_current_avg * meta_gain * meta_expo);
+    raw_info->black_level = median_int_wirth(samples, num_samples);
     
     free(samples);
 }
@@ -435,14 +442,22 @@ static void read_reference_frame(char* filename, int16_t * buf, struct raw_info 
     reverse_bytes_order((void*)buf, width * height * 2);
 }
 
-static void subtract_dark_frame(struct raw_info * raw_info, int16_t * raw16, int16_t * dark)
+static void subtract_dark_frame(struct raw_info * raw_info, int16_t * raw16, int16_t * dark, int16_t extra_offset, int16_t * dcnu, float meta_expo)
 {
     /* note: data in dark frames is multiplied by 8 (already done when promoting to raw16)
      * and offset by DARKFRAME_OFFSET, to allow corrections below black level */
     int n = raw_info->width * raw_info->height;
+    int offset = extra_offset - DARKFRAME_OFFSET;
+    
     for (int i = 0; i < n; i++)
     {
-        raw16[i] -= (dark[i] - DARKFRAME_OFFSET);
+        if (dcnu)
+        {
+            float dc = (float) (dcnu[i] - DCNUFRAME_OFFSET) / DCNUFRAME_SCALING;
+            offset = extra_offset - DARKFRAME_OFFSET + (int)roundf(dc * meta_expo);
+        }
+
+        raw16[i] -= (dark[i] + offset);
     }
 }
 
@@ -831,11 +846,7 @@ static void calc_avgframe_finish(char* out_filename, struct raw_info * raw_info,
     free(A.sum32);
     free(A.max16);
     free(A.min16);
-    A.sum32 = 0;
-    A.min16 = 0;
-    A.max16 = 0;
-    A.size = 0;
-    A.gain = 0;
+    memset(&A, 0, sizeof(A));
 }
 
 static void calc_gainframe_do(struct raw_info * raw_info, int16_t * buf)
@@ -862,6 +873,121 @@ static void calc_gainframe_do(struct raw_info * raw_info, int16_t * buf)
     }
     
     free(fixed);
+}
+
+/* linear (least squares) fit between images (see linear_fit) */
+static struct
+{
+    double * my;
+    double * mxy;
+    double mx;
+    double mx2;
+    int size;
+    int count;
+    int gain;
+    float expo_min;
+    float expo_max;
+} L;
+
+static void calc_linfitframes_addframe(struct raw_info * raw_info, int16_t * raw16, int meta_gain, float meta_expo)
+{
+    int n = raw_info->width * raw_info->height;
+    int new_frame_size = n * sizeof(L.my[0]);
+    
+    if (!L.my)
+    {
+        /* allocate memory on first call */
+        L.size = new_frame_size;
+        L.gain = meta_gain;
+        L.my = malloc(L.size);
+        L.mxy = malloc(L.size);
+        CHECK(L.my,  "malloc");
+        CHECK(L.mxy, "malloc");
+        
+        for (int i = 0; i < n; i++)
+        {
+            L.my[i]  = 0;
+            L.mxy[i] = 0;
+        }
+        
+        L.expo_min = 1e10;
+        L.expo_max = 0;
+    }
+    
+    /* sanity checking */
+    CHECK(L.size == new_frame_size, "all frames must have the same resolution.")
+    CHECK(L.gain == meta_gain, "all frames must have the same gain setting.")
+
+    /* find offset */
+    int offsets[4];
+    int avg_offset;
+    calc_black_columns_offset(raw_info, raw16, offsets, &avg_offset);
+
+    /* add current frame to accumulators */
+    L.mx += meta_expo;
+    L.mx2 += meta_expo * meta_expo;
+    for (int i = 0; i < n; i++)
+    {
+        int p = (int) raw16[i] - avg_offset;
+        L.my[i]  += p;
+        L.mxy[i] += meta_expo * p;
+    }
+    L.count++;
+    
+    /* keep track of min/max exposure, for printing at the end */
+    L.expo_max = MAX(L.expo_max, meta_expo);
+    L.expo_min = MIN(L.expo_min, meta_expo);
+}
+
+static void calc_linfitframes_finish(char* offset_filename, char* gain_filename, struct raw_info * raw_info)
+{
+    CHECK(L.my, "invalid call to calc_linfitframes_finish")
+    
+    int n = raw_info->width * raw_info->height;
+
+    printf("\n");
+    printf("-----------------------------\n");
+    printf("\n");
+    printf("Combined %d frames exposed from %.2f to %.2f ms.\n", L.count, L.expo_min, L.expo_max);
+
+    if (L.count < 16)
+    {
+        printf("You really need to use more frames (at least 64).\n");
+    }
+    else if (L.count < 64)
+    {
+        printf("Please consider using more frames (at least 64).\n");
+    }
+    
+    /* finish the linear fitting */
+    L.mx /= L.count;
+    L.mx2 /= L.count;
+    for (int i = 0; i < n; i++)
+    {
+        L.my[i]  /= L.count;
+        L.mxy[i] /= L.count;
+    }
+    
+    int32_t * a = malloc(n * sizeof(a[0]));
+    int32_t * b = malloc(n * sizeof(a[0]));
+
+    for (int i = 0; i < n; i++)
+    {
+        /* note: when scaling, we keep in mind the raw data was multiplied by 8
+         * when it was promoted to raw16, so we scale it back to 12-bit values */
+        double aa = (L.mxy[i] - L.mx * L.my[i]) / (L.mx2 - L.mx * L.mx);
+        a[i] = (int)round(aa * DCNUFRAME_SCALING / 8 + DCNUFRAME_OFFSET);
+        b[i] = (int)round((L.my[i] - aa * L.mx) + DARKFRAME_OFFSET);
+    }
+
+    save_pgm(offset_filename, raw_info, b);
+    save_pgm(gain_filename,   raw_info, a);
+    
+    free(L.my);
+    free(L.mxy);
+    free(a);
+    free(b);
+    memset(&L, 0, sizeof(L));
 }
 
 /* pack raw data from 16-bit to 12-bit */
@@ -982,8 +1108,9 @@ int main(int argc, char** argv)
         printf("  cat input.raw12 | %s output.dng [options]\n", argv[0]);
         printf("\n");
         printf("Flat field correction:\n");
-        printf(" - for each gain, you may use 3 reference images (N=1,2,3,4):\n");
+        printf(" - for each gain (N=1,2,3,4), you may use the following reference images:\n");
         printf(" - darkframe-xN.pgm will be subtracted (data is x8 + 1024)\n");
+        printf(" - dcnuframe-xN.pgm will be multiplied by exposure and subtracted (x8192 + 8192)\n");
         printf(" - gainframe-xN.pgm will be multiplied (1.0 = 16384)\n");
         printf(" - clipframe-xN.pgm will be subtracted from highlights (x8)\n");
         printf(" - reference images are 16-bit PGM, in the current directory\n");
@@ -994,6 +1121,10 @@ int main(int argc, char** argv)
         printf(" - dark frames: average as many as practical, for each gain setting,\n");
         printf("   with exposures ranging from around 1ms to 50ms:\n");
         printf("        raw2dng --calc-darkframe *-gainx1-*.raw12 \n");
+        printf(" - DCNU (dark current nonuniformity) frames: similar to dark frames,\n");
+        printf("   just take a lot more images to get a good fit (use 256 as a starting point):\n");
+        printf("        raw2dng --calc-dcnuframe *-gainx1-*.raw12 \n");
+        printf("   (note: the above will compute BOTH a dark frame and a dark current frame)\n");
         printf(" - gain frames: average as many as practical, for each gain setting,\n");
         printf("   with a normally exposed blank OOF wall as target, or without lens\n");
         printf("   (currently used for pattern noise reduction only):\n");
@@ -1002,7 +1133,7 @@ int main(int argc, char** argv)
         printf("   with a REALLY overexposed blank out-of-focus wall as target:\n");
         printf("        raw2dng --calc-clipframe *-gainx1-*.raw12 \n");
         printf(" - Always compute these frames in the order listed here\n");
-        printf("   (dark frames, then gain frames (optional), then clip frames (optional).\n");
+        printf("   (dark/dcnu frames, then gain frames (optional), then clip frames (optional).\n");
         
         printf("\n");
         show_commandline_help(argv[0]);
@@ -1016,6 +1147,7 @@ int main(int argc, char** argv)
     show_active_options();
 
     char dark_filename[20];
+    char dcnu_filename[20];
     char gain_filename[20];
     char clip_filename[20];
     char lut_filename[20];
@@ -1141,7 +1273,7 @@ int main(int argc, char** argv)
         if (black_level == 0xFFFF)
         {
             /* black level not specified? autodetect from black reference columns */
-            raw12_detect_black_level(&raw_info, meta_gain, meta_expo);
+            raw12_detect_black_level(&raw_info);
         }
         
         printf("Black level : %d\n", raw_info.black_level);
@@ -1181,30 +1313,34 @@ int main(int argc, char** argv)
         int16_t * raw16 = 0;
 
         snprintf(dark_filename, sizeof(dark_filename), "darkframe-x%d.pgm", meta_gain);
+        snprintf(dcnu_filename, sizeof(dcnu_filename), "dcnuframe-x%d.pgm", meta_gain);
         snprintf(gain_filename, sizeof(gain_filename), "gainframe-x%d.pgm", meta_gain);
         snprintf(clip_filename, sizeof(clip_filename), "clipframe-x%d.pgm", meta_gain);
         snprintf(lut_filename,  sizeof(lut_filename),  "lut-x%d.spi1d",     meta_gain);
 
         /* note: gain frame, clip frame and black column subtraction
          * are only enabled if we also use a dark frame */
-        int use_darkframe = !calc_darkframe &&                  
+        int use_darkframe = !calc_dcnuframe && !calc_darkframe &&
                             !no_darkframe && meta_gain && file_exists_warn(dark_filename);
+
+        int use_dcnuframe = !calc_dcnuframe && !calc_darkframe && use_darkframe &&
+                            !no_dcnuframe && meta_gain && file_exists_warn(dcnu_filename);
         
-        int use_gainframe = !calc_gainframe && !calc_darkframe && use_darkframe &&
+        int use_gainframe = !calc_gainframe && !calc_dcnuframe && !calc_darkframe && use_darkframe &&
                             !no_gainframe && meta_gain && file_exists_warn(gain_filename);
         
-        int use_clipframe = !calc_clipframe && !calc_gainframe && !calc_darkframe && use_darkframe &&
+        int use_clipframe = !calc_clipframe && !calc_gainframe && !calc_dcnuframe && !calc_darkframe && use_darkframe &&
                             !no_clipframe && meta_gain && file_exists_warn(clip_filename);
         
         use_lut = use_lut && file_exists_warn(lut_filename);
         
-        if (!use_darkframe && !calc_darkframe)
+        if (!use_darkframe && !calc_darkframe && !calc_dcnuframe)
         {
             no_blackcol = 1;
         }
 
         int raw16_postprocessing =
-            (calc_darkframe || calc_gainframe || calc_clipframe ||
+            (calc_darkframe || calc_dcnuframe || calc_gainframe || calc_clipframe ||
              use_darkframe  || use_gainframe  || use_clipframe  ||
              use_lut || fixpn);
         
@@ -1220,9 +1356,27 @@ int main(int argc, char** argv)
         {
             printf("Dark frame  : %s\n", dark_filename);
             int16_t * dark = malloc(raw_info.width * raw_info.height * sizeof(dark[0]));
+            int16_t * dcnu = 0;
+            int extra_offset = 0;
+
             read_reference_frame(dark_filename, dark, &raw_info);
-            subtract_dark_frame(&raw_info, raw16, dark);
+            
+            if (use_dcnuframe)
+            {
+                printf("DCNU frame  : %s\n", dcnu_filename);
+                dcnu = malloc(raw_info.width * raw_info.height * sizeof(dcnu[0]));
+                read_reference_frame(dcnu_filename, dcnu, &raw_info);
+            }
+            else
+            {
+                int dark_current = (int) roundf(dark_current_avg * meta_gain * meta_expo);
+                printf("Dark current: %d\n", dark_current);
+                extra_offset = dark_current;
+            }
+
+            subtract_dark_frame(&raw_info, raw16, dark, extra_offset, dcnu, meta_expo);
             free(dark);
+            if (dcnu) free(dcnu);
         }
 
         if (!no_blackcol)
@@ -1263,7 +1417,7 @@ int main(int argc, char** argv)
             apply_lut(&raw_info, raw16);
         }
 
-        if (calc_darkframe || calc_gainframe || calc_clipframe)
+        if (calc_darkframe || calc_dcnuframe || calc_gainframe || calc_clipframe)
         {
             if ((calc_gainframe || calc_clipframe) && !use_darkframe)
             {
@@ -1277,8 +1431,16 @@ int main(int argc, char** argv)
                 calc_gainframe_do(&raw_info, raw16);
             }
             
-            /* generic averaging routine */
-            calc_avgframe_addframe(&raw_info, raw16, meta_gain, meta_expo);
+            if (calc_dcnuframe)
+            {
+                /* linear fit for multiple frames */
+                calc_linfitframes_addframe(&raw_info, raw16, meta_gain, meta_expo);
+            }
+            else
+            {
+                /* generic averaging routine */
+                calc_avgframe_addframe(&raw_info, raw16, meta_gain, meta_expo);
+            }
             
             /* no need to repack to 12 bits */
             free(raw16); raw16 = 0;
@@ -1305,6 +1467,10 @@ cleanup:
     if (calc_darkframe)
     {
         calc_avgframe_finish(dark_filename, &raw_info, CALC_DARK_FRAME);
+    }
+    else if (calc_dcnuframe)
+    {
+        calc_linfitframes_finish(dark_filename, dcnu_filename, &raw_info);
     }
     else if (calc_gainframe)
     {
