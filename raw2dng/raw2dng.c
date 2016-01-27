@@ -54,9 +54,9 @@ static int16_t Lut_B[4096*8];
  * How much the dark frame average, after subtracting black reference columns, 
  * increases with exposure time and gain (DN / ms / gain);
  */
-float dark_current_avg = 0.05;
+float dark_current_avg = 0.06;
 
-int black_level = 0xFFFF;   /* autodetected from black reference columns */
+int black_level = 128;
 int white_level = 4095;
 int image_width = 0;
 int image_height = 0;
@@ -82,7 +82,7 @@ int calc_dcnuframe = 0;
 struct cmd_group options[] = {
     {
         "General options", (struct cmd_option[]) {
-            { &black_level,    1, "--black=%d",    "Set black level (default: autodetect)\n"
+            { &black_level,    1, "--black=%d",    "Set black level (default: 128)\n"
                              "                      - negative values allowed" },
             { &white_level,    1, "--white=%d",    "Set white level (default: 4095)\n"
                              "                      - if too high, you may get pink highlights\n"
@@ -201,45 +201,6 @@ static void raw12_data_offset(void* buf, int frame_size, int offset)
     }
 }
 
-/**
- * Detect black level from black reference columns (median).
- * This ONLY works well after subtracting a dark frame,
- * otherwise the actual black level can be a few hundred units
- * higher than the black reference values (why?!)
- */
-static void raw12_detect_black_level(struct raw_info * raw_info)
-{
-    /* there are 8 black reference columns on each side */
-    const int max_samples = 3072 * 16;
-    int* samples = malloc(max_samples * sizeof(samples[0]));
-    int num_samples = 0;
-    
-    for (int y = 0; y < raw_info->height; y++)
-    {
-        for (int x = 0; x < raw_info->width; x += 2)
-        {
-            if (x == 8)
-            {
-                /* fast forward to the right side */
-                x = raw_info->width - 8;
-            }
-            struct raw12_twopix * p = (struct raw12_twopix *)(raw_info->buffer + y * raw_info->pitch + x * sizeof(struct raw12_twopix) / 2);
-            unsigned a = (p->a_hi << 4) | p->a_lo;
-            unsigned b = (p->b_hi << 8) | p->b_lo;
-            
-            if (num_samples + 1 < max_samples)
-            {
-                samples[num_samples++] = a;
-                samples[num_samples++] = b;
-            }
-        }
-    }
-    
-    raw_info->black_level = median_int_wirth(samples, num_samples);
-    
-    free(samples);
-}
-
 /* compute offset for odd/even rows, at left and right of the frame, and average offset */
 static void calc_black_columns_offset(struct raw_info * raw_info, int16_t * raw16, int offsets[4], int* avg_offset)
 {
@@ -293,9 +254,10 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
     int h = raw_info->height;
 
     int offsets[4];
-    int avg_offset;
+    int avg_offset_unused;
+    int target_black_level = 128 * 8;
 
-    calc_black_columns_offset(raw_info, raw16, offsets, &avg_offset);
+    calc_black_columns_offset(raw_info, raw16, offsets, &avg_offset_unused);
 
     printf("Even rows   : %d...%d\n", offsets[0]/8, offsets[2]/8);
     printf("Odd rows    : %d...%d\n", offsets[1]/8, offsets[3]/8);
@@ -306,7 +268,7 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
         {
             int off_l = offsets[y%2];
             int off_r = offsets[2 + y%2];
-            int off = off_l + (off_r - off_l) * x / w - avg_offset;
+            int off = off_l + (off_r - off_l) * x / w - target_black_level;
             raw16[x + y*w] -= off;
         }
     }
@@ -350,7 +312,7 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
                 /* fast forward to the right side */
                 x = w - 8;
             }
-            acc += raw16[x + y*w] - avg_offset;
+            acc += raw16[x + y*w] - target_black_level;
         }
         row_noise[y] = round(acc * blackcol_ratio / 16);
     }
@@ -442,22 +404,40 @@ static void read_reference_frame(char* filename, int16_t * buf, struct raw_info 
     reverse_bytes_order((void*)buf, width * height * 2);
 }
 
-static void subtract_dark_frame(struct raw_info * raw_info, int16_t * raw16, int16_t * dark, int16_t extra_offset, int16_t * dcnu, float meta_expo)
+static void subtract_dark_frame(struct raw_info * raw_info, int16_t * raw16, int16_t * darkframe, int16_t extra_offset, int16_t * dcnu, float meta_expo)
 {
     /* note: data in dark frames is multiplied by 8 (already done when promoting to raw16)
      * and offset by DARKFRAME_OFFSET, to allow corrections below black level */
-    int n = raw_info->width * raw_info->height;
-    int offset = extra_offset - DARKFRAME_OFFSET;
+    int w = raw_info->width;
+    int h = raw_info->height;
+    int dark_current = extra_offset;
     
-    for (int i = 0; i < n; i++)
+    for (int y = 0; y < h; y++)
     {
-        if (dcnu)
+        for (int x = 0; x < w; x++)
         {
-            float dc = (float) (dcnu[i] - DCNUFRAME_OFFSET) * 8 / DCNUFRAME_SCALING;
-            offset = extra_offset - DARKFRAME_OFFSET + (int)roundf(dc * meta_expo);
+            int i = x + y*w;
+            
+            if (dcnu)
+            {
+                float dc = (float) (dcnu[i] - DCNUFRAME_OFFSET) * 8 / DCNUFRAME_SCALING;
+                dark_current = (int)roundf(dc * meta_expo);
+            }
+            
+            if (x >= 8 && x < w - 8)
+            {
+                /* for the active area, subtract the dark frame (constant offset)
+                 * and the dark current (exposure-dependent offset) */
+                raw16[i] -= (darkframe[i] - DARKFRAME_OFFSET + dark_current);
+            }
+            else
+            {
+                /* for black columns, subtract only the dark frame, not the dark current
+                 * (because that's how we define the dark current: the dark frame variation
+                 * with exposure after subtracting the black columns) */
+                raw16[i] -= (darkframe[i] - DARKFRAME_OFFSET);
+            }
         }
-
-        raw16[i] -= (dark[i] + offset);
     }
 }
 
@@ -1269,12 +1249,6 @@ int main(int argc, char** argv)
         /* use black and white levels from command-line */
         raw_info.black_level = black_level;
         raw_info.white_level = white_level;
-
-        if (black_level == 0xFFFF)
-        {
-            /* black level not specified? autodetect from black reference columns */
-            raw12_detect_black_level(&raw_info);
-        }
         
         printf("Black level : %d\n", raw_info.black_level);
         printf("White level : %d\n", raw_info.white_level);
