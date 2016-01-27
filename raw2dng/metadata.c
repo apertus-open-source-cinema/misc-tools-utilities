@@ -79,6 +79,11 @@ int metadata_get_dark_offset(uint16_t registers[128])
     return registers[87];
 }
 
+int metadata_get_ystart(uint16_t registers[128])
+{
+    return registers[2];
+}
+
 void metadata_dump_registers(uint16_t registers[128])
 {
     const char * reg_names[128] = {
