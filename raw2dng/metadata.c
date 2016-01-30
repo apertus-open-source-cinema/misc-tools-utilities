@@ -29,7 +29,13 @@ static uint16_t get_bits (uint16_t in, int offset, int length) {
     return in3;
 }
 
-double metadata_get_exposure(uint16_t registers[128])
+/* expo_reg can be:
+ * 71: Exp_time
+ * 73: Exp_time2,
+ * 75: Exp_kp1,
+ * 77: Exp_kp2
+ */
+static double get_exposure(uint16_t registers[128], int expo_reg)
 {
     double bits;
     switch (get_bits(registers[118], 0, 2)) {
@@ -46,7 +52,18 @@ double metadata_get_exposure(uint16_t registers[128])
             return 0;
     }
     double lvds = 250e6;
-    return exposure(registers[72]*65536+registers[71], registers[82], registers[85], bits, lvds);
+    return exposure(
+        registers[expo_reg+1]*65536 + registers[expo_reg],
+        registers[82],
+        registers[85],
+        bits,
+        lvds
+    );
+}
+
+double metadata_get_exposure(uint16_t registers[128])
+{
+    return get_exposure(registers, 71);
 }
 
 static int get_div(uint16_t registers[128])
@@ -173,12 +190,42 @@ void metadata_dump_registers(uint16_t registers[128])
     }
 }
 
+static void print_plr_settings(uint16_t registers[128])
+{
+    int num_slopes = registers[79];
+    
+    if (num_slopes > 1)
+    {
+        printf("PLR exposure: %d segments\n", num_slopes);
+
+        double exp_kp1 = get_exposure(registers, 75);
+        double exp_kp2 = get_exposure(registers, 77);
+
+        int vtfl2_en = (registers[106]     ) & 0x40;
+        int vtfl3_en = (registers[106] >> 7) & 0x40;
+        int vtfl2    = (registers[106]     ) & 0x3F;
+        int vtfl3    = (registers[106] >> 7) & 0x3F;
+        
+        if (vtfl2_en)
+        {
+            printf("Knee point 1: %g ms from %d%% (vtfl2=%d)\n", exp_kp1, (63-vtfl2)*100/63, vtfl2);
+        }
+
+        if (vtfl3_en)
+        {
+            printf("Knee point 2: %g ms from %d%% (vtfl3=%d)\n", exp_kp2, (63-vtfl3)*100/63, vtfl3);
+        }
+    }
+}
+
 /* based on metadatareader.c */
 void metadata_extract(uint16_t registers[128])
 {
     double exposure_ms = metadata_get_exposure(registers);
     printf("Exposure    : %g ms\n", exposure_ms);
     dng_set_shutter((int)round(exposure_ms * 1000), 1000000);
+
+    print_plr_settings(registers);
 
     int gain = metadata_get_gain(registers);
     int div = get_div(registers);
