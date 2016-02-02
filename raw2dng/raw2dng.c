@@ -1099,6 +1099,155 @@ static int endswith(char* str, char* suffix)
     return 0;
 }
 
+static void reverse_hdmi_curves(struct raw_info * raw_info, int16_t * raw16)
+{
+    printf("Reversing curves...\n");
+    int w = raw_info->width;
+    int h = raw_info->height;
+
+    /* GBRG */
+    double P[4][3] = {
+        { 0.02814, 0.3022, 4.381 },
+        { 0.02595, 0.3504, 3.856 },
+        { 0.02468, 0.3731, 3.768 },
+        { 0.02814, 0.3022, 4.381 },
+    };
+    int offsets[4] = {2, -2, -2, 3};
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            int k = (x%2) + (y%2)*2;
+            double p = raw16[x + y*w] / 32768.0;
+            p = log2(p*p * 4095);
+            p = P[k][0] * p*p + P[k][1] * p + P[k][2];
+            raw16[x + y*w] = (pow(2,p) + offsets[k]) * 8;
+        }
+    }
+}
+
+/* 16-bit ppm, for input data coming from HDMI recorders */
+/* raw16 is allocated by us */
+static void read_ppm(char* filename, struct raw_info * raw_info, int16_t ** praw16)
+{
+    FILE* fp = fopen(filename, "rb");
+    CHECK(fp, "could not open %s", filename);
+
+    /* PGM read code from dcraw, adapted for PPM */
+    int dim[3]={0,0,0}, comment=0, number=0, error=0, nd=0, c;
+
+      if (fgetc(fp) != 'P' || fgetc(fp) != '6') error = 1;
+      while (!error && nd < 3 && (c = fgetc(fp)) != EOF) {
+        if (c == '#')  comment = 1;
+        if (c == '\n') comment = 0;
+        if (comment) continue;
+        if (isdigit(c)) number = 1;
+        if (number) {
+          if (isdigit(c)) dim[nd] = dim[nd]*10 + c -'0';
+          else if (isspace(c)) {
+        number = 0;  nd++;
+          } else error = 1;
+        }
+      }
+    
+    CHECK(!(error || nd < 3), "not a valid PGM file\n");
+
+    int width = dim[0];
+    int height = dim[1];
+    
+    raw_info->width = width * 2;
+    raw_info->height = height * 2;
+
+    /* allocate memory for the PPM data (RGB48) and for the Bayer raw16 data (double resolution) */
+    CHECK(praw16 && !*praw16, "raw16");
+    uint16_t * ppm = malloc(width * height * 2 * 3);
+    *praw16 = malloc(raw_info->width * raw_info->height * 2);
+    int16_t * raw16 = *praw16;
+    
+    int size = fread(ppm, 1, width * height * 2 * 3, fp);
+    CHECK(size == width * height * 2 * 3, "fread");
+    fclose(fp);
+    
+    /* PGM is big endian, need to reverse it */
+    reverse_bytes_order((void*)ppm, width * height * 2 * 3);
+    
+    /* now copy the RGB data from PPM into raw16 Bayer buffer (duplicate green) */
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            int r = ppm[x*3   + y*width*3] / 2;
+            int g = ppm[x*3+1 + y*width*3] / 2;
+            int b = ppm[x*3+2 + y*width*3] / 2;
+            raw16[2*x   +  2*y    * 2*width] = g;
+            raw16[2*x+1 +  2*y    * 2*width] = b;
+            raw16[2*x   + (2*y+1) * 2*width] = r;
+            raw16[2*x+1 + (2*y+1) * 2*width] = g;
+        }
+    }
+    
+    /* PPM data no longer needed, raw16 will be freed later */
+    free(ppm);
+}
+
+/* 16-bit pgm, Bayer GBRG, for testing purposes (e.g. saved from octave) */
+static void read_pgm(char* filename, struct raw_info * raw_info, int16_t ** praw16)
+{
+    FILE* fp = fopen(filename, "rb");
+    CHECK(fp, "could not open %s", filename);
+
+    /* PGM read code from dcraw */
+    int dim[3]={0,0,0}, comment=0, number=0, error=0, nd=0, c;
+
+      if (fgetc(fp) != 'P' || fgetc(fp) != '5') error = 1;
+      while (!error && nd < 3 && (c = fgetc(fp)) != EOF) {
+        if (c == '#')  comment = 1;
+        if (c == '\n') comment = 0;
+        if (comment) continue;
+        if (isdigit(c)) number = 1;
+        if (number) {
+          if (isdigit(c)) dim[nd] = dim[nd]*10 + c -'0';
+          else if (isspace(c)) {
+        number = 0;  nd++;
+          } else error = 1;
+        }
+      }
+    
+    CHECK(!(error || nd < 3), "not a valid PGM file\n");
+
+    int width = dim[0];
+    int height = dim[1];
+    
+    raw_info->width = width;
+    raw_info->height = height;
+
+    /* allocate memory for Bayer raw16 data */
+    CHECK(praw16 && !*praw16, "raw16");
+    *praw16 = malloc(raw_info->width * raw_info->height * 2);
+    int16_t * raw16 = *praw16;
+    
+    int size = fread(raw16, 1, width * height * 2, fp);
+    CHECK(size == width * height * 2, "fread");
+    fclose(fp);
+    
+    /* PGM is big endian, need to reverse it */
+    reverse_bytes_order((void*)raw16, width * height * 2);
+    
+    /* scale data by 8 */
+    for (int i = 0; i < width * height; i++)
+    {
+        raw16[i] *= 8;
+    }
+}
+
+static void change_ext(char* old, char* new, char* newext, int maxsize)
+{
+    snprintf(new, maxsize - strlen(newext), "%s", old);
+    char* ext = strrchr(new, '.');
+    if (!ext) ext = new + strlen(new);
+    strcpy(ext, newext);
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 1)
@@ -1162,6 +1311,7 @@ int main(int argc, char** argv)
         
         FILE* fi;
         char* out_filename;
+        int16_t * raw16 = 0;
 
         printf("\n%s\n", argv[k]);
         
@@ -1172,15 +1322,41 @@ int main(int argc, char** argv)
 
             /* replace input file extension with .DNG */
             static char fo[256];
-            snprintf(fo, sizeof(fo), "%s", argv[k]);
-            char* ext = strrchr(fo, '.');
-            if (!ext) ext = fo + strlen(fo) - 4;
-            ext[0] = '.';
-            ext[1] = 'D';
-            ext[2] = 'N';
-            ext[3] = 'G';
-            ext[4] = '\0';
+            change_ext(argv[k], fo, ".DNG", sizeof(fo));
             out_filename = fo;
+        }
+        else if (endswith(argv[k], ".pgm"))
+        {
+            fi = fopen(argv[k], "rb");
+            CHECK(fi, "could not open %s", argv[k]);
+
+            /* replace input file extension with .DNG */
+            static char fo[256];
+            change_ext(argv[k], fo, ".DNG", sizeof(fo));
+            out_filename = fo;
+            
+            /* read PGM data assuming it's raw16 */
+            read_pgm(argv[k], &raw_info, &raw16);
+            image_width = raw_info.width;
+            image_height = raw_info.height;
+        }
+        else if (endswith(argv[k], ".ppm"))
+        {
+            fi = fopen(argv[k], "rb");
+            CHECK(fi, "could not open %s", argv[k]);
+
+            /* replace input file extension with .DNG */
+            static char fo[256];
+            change_ext(argv[k], fo, ".DNG", sizeof(fo));
+            out_filename = fo;
+            
+            /* read PPM data assuming it's 16-bit data from HDMI */
+            printf("Assuming HDMI image\n");
+            read_ppm(argv[k], &raw_info, &raw16);
+            reverse_hdmi_curves(&raw_info, raw16);
+            image_width = raw_info.width;
+            image_height = raw_info.height;
+            no_blackcol = 1;
         }
         else if (endswith(argv[k], ".dng") || endswith(argv[k], ".DNG"))
         {
@@ -1225,7 +1401,6 @@ int main(int argc, char** argv)
                 break;
         }
 
-
         /* load the raw data and convert it to DNG */
         char* raw = malloc(raw_info.frame_size);
         CHECK(raw, "malloc");
@@ -1239,6 +1414,12 @@ int main(int argc, char** argv)
         int meta_gain = 0;
         float meta_expo = 0;
         int meta_ystart = 0;
+        
+        if (raw16)
+        {
+            /* hack to use dark frames on HDMI data */
+            meta_gain = 1;
+        }
 
         if (has_metadata)
         {
@@ -1307,8 +1488,6 @@ int main(int argc, char** argv)
             /* skip all processing (except reordering) */
             goto save_output;
         }
-        
-        int16_t * raw16 = 0;
 
         snprintf(dark_filename, sizeof(dark_filename), "darkframe-x%d.pgm", meta_gain);
         snprintf(dcnu_filename, sizeof(dcnu_filename), "dcnuframe-x%d.pgm", meta_gain);
@@ -1337,15 +1516,16 @@ int main(int argc, char** argv)
             no_blackcol = 1;
         }
 
-        int raw16_postprocessing =
-            (calc_darkframe || calc_dcnuframe || calc_gainframe || calc_clipframe ||
+        int raw16_postprocessing = (raw16 ||
+             calc_darkframe || calc_dcnuframe || calc_gainframe || calc_clipframe ||
              use_darkframe  || use_gainframe  || use_clipframe  ||
              use_lut || fixpn);
         
-        if (raw16_postprocessing)
+        if (raw16_postprocessing && !raw16)
         {
             /* if we process the raw data, unpack it to int16_t (easier to work with) */
             /* this also multiplies the values by 8 */
+            /* but if the input file is already raw16, nothing to do here */
             raw16 = malloc(raw_info.width * raw_info.height * sizeof(raw16[0]));
             unpack12(&raw_info, raw16);
         }
