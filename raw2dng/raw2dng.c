@@ -1112,7 +1112,6 @@ static void reverse_hdmi_curves(struct raw_info * raw_info, int16_t * raw16)
         { 0.02468, 0.3731, 3.768 },
         { 0.02814, 0.3022, 4.381 },
     };
-    int offsets[4] = {2, -2, -2, 3};
     for (int y = 0; y < h; y++)
     {
         for (int x = 0; x < w; x++)
@@ -1121,7 +1120,7 @@ static void reverse_hdmi_curves(struct raw_info * raw_info, int16_t * raw16)
             double p = raw16[x + y*w] / 32768.0;
             p = log2(p*p * 4095);
             p = P[k][0] * p*p + P[k][1] * p + P[k][2];
-            raw16[x + y*w] = (pow(2,p) + offsets[k]) * 8;
+            raw16[x + y*w] = pow(2,p) * 8;
         }
     }
 }
