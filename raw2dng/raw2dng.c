@@ -550,6 +550,11 @@ static void read_lut(char * filename)
                 exit(1);
         }
         
+        CHECK(r  >= 0 && r  <= 1, "R range");
+        CHECK(g1 >= 0 && g1 <= 1, "G1 range");
+        CHECK(g2 >= 0 && g2 <= 1, "G2 range");
+        CHECK(b  >= 0 && b  <= 1, "B range");
+        
         int this = i * (4096*8-1) / (length-1);
         
         Lut_R [this] = (int) round(r  * 4096 * 8);
@@ -566,11 +571,21 @@ static void read_lut(char * filename)
             interp1(Lut_G2 + prev, this - prev);
             interp1(Lut_B  + prev, this - prev);
         }
-
     }
     CHECK(fscanf(f, "}\n")                              == 0,   "}"      );
-
     fclose(f);
+    
+    if (0)
+    {
+        f = fopen("lut.m", "w");
+        fprintf(f, "lut = [\n");
+        for (int i = 0; i < 4096*8; i++)
+        {
+            fprintf(f, "%d %d %d %d\n", Lut_R[i], Lut_G1[i], Lut_G2[i], Lut_B[i]);
+        }
+        fprintf(f, "];");
+        fclose(f);
+    }
 }
 
 static void apply_lut(struct raw_info * raw_info, int16_t * raw16)
