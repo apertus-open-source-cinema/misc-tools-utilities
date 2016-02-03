@@ -40,9 +40,9 @@ bit_order_m1 = [ [4:11] ...                            % R1 = r(11:4)
 bit_order_m2 = [ [4:11] ...                            % R1 = r(11 downto 4)
             12 + [4:11] ...                            % G1 = g1(11 downto 4)
             36 + [8:11] [48 48 48 48] ...              % B1 = b(11 downto 8), high bits padded with 0 (48 in bit_order means "always 0")
-                 [0:3] [8:11] ...                      % R2 = r(11 downto 8) & hd_r(3 downto 0)
+                 [0:3] [8:11] ...                      % R2 = r(11 downto 8) & r(3 downto 0)
             24 + [4:11] ...                            % G2 = g2(11 downto 4)
-            36 + [0:3] [8:11] ];                       % B2 = b(11 downto 8) & hd_b(3 downto 0);
+            36 + [[0:3] [8:11]] ];                     % B2 = b(11 downto 8) & b(3 downto 0);
 
 % optional HDMI processing steps
 global HDMI_PROCESS_YUV_BLUR_SHARPEN
