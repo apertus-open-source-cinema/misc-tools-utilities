@@ -2,11 +2,11 @@ function im = show_raw(im, black, white)
     % quick and dirty raw rendering
     % (half-res, hardcoded WB and gamma)
     
-    r  = im(1:2:end,1:2:end);
-    g1 = im(1:2:end,2:2:end);
-    g2 = im(2:2:end,1:2:end);
-    b  = im(2:2:end,2:2:end);
-    g = (g1 + g2) / 2;
+    g2 = im(1:2:end,1:2:end);
+    b  = im(1:2:end,2:2:end);
+    r  = im(2:2:end,1:2:end);
+    g1 = im(2:2:end,2:2:end);
+    g  = (g1 + g2) / 2;
     
     if nargout == 0
         show_raw_rgb(r, g, b, black, white);

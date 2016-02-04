@@ -1,5 +1,5 @@
 function e = simulate_hdmi(raw, method, arg, output_file)
-    % assume raw is in [RG;GB] order
+    % assume raw is in [GB;RG] order
     % method can be:
     % - 'bits'  => arg is a bit_order array (48 entries)
     % - 'gamma' => arg is a scalar offset (parameter for the gamma curve)
@@ -11,10 +11,14 @@ function e = simulate_hdmi(raw, method, arg, output_file)
     raw = max(raw, 0);
     raw = min(raw, 4095);
     
-    r  = raw(1:2:end,1:2:end);
-    g1 = raw(1:2:end,2:2:end);
-    g2 = raw(2:2:end,1:2:end);
-    b  = raw(2:2:end,2:2:end);
+    g2 = raw(1:2:end,1:2:end);
+    b  = raw(1:2:end,2:2:end);
+    r  = raw(2:2:end,1:2:end);
+    g1 = raw(2:2:end,2:2:end);
+
+    % for some reason, this gives perfect alignment with the HDMI output
+    g2 = circshift(g2, -1);
+    b  = circshift(b, -1);
     
     if (nargout == 0)
         % only check those in interactive mode, for speed
@@ -55,10 +59,10 @@ function e = simulate_hdmi(raw, method, arg, output_file)
 
     if (nargout == 0)
         rraw = raw;
-        rraw(1:2:end,1:2:end) = rr;
-        rraw(1:2:end,2:2:end) = rg1;
-        rraw(2:2:end,1:2:end) = rg2;
-        rraw(2:2:end,2:2:end) = rb;
+        rraw(1:2:end,1:2:end) = rg2;
+        rraw(1:2:end,2:2:end) = rb;
+        rraw(2:2:end,1:2:end) = rr;
+        rraw(2:2:end,2:2:end) = rg1;
         RGB1(:,:,1) = uint8(R1);
         RGB1(:,:,2) = uint8(G1);
         RGB1(:,:,3) = uint8(B1);
