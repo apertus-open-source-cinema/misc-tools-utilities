@@ -31,8 +31,9 @@ function [R,G,B] = process_hdmi_1(R,G,B)
         RGB(:,:,2) = uint8(G);
         RGB(:,:,3) = uint8(B);
         imwrite(RGB, 'tmp.ppm');
-        system('convert tmp.ppm -quality 75 -sampling-factor 4:2:2 tmp.jpg');
-        RGB = imread('tmp.jpg');
+        system('ffmpeg -i tmp.ppm -vcodec prores -profile:v 2 -y tmp.mov');
+        system('ffmpeg -i tmp.mov -pix_fmt rgb24 -y tmp.ppm');
+        RGB = imread('tmp.ppm');
         R = RGB(:,:,1);
         G = RGB(:,:,2);
         B = RGB(:,:,3);
