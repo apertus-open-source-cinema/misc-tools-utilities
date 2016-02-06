@@ -128,7 +128,7 @@ struct cmd_group options[] = {
             { &fixpn_flags1,   FIXPN_DBG_DENOISED,  "--fixpn-dbg-denoised", "Pattern noise: show denoised image" },
             { &fixpn_flags1,   FIXPN_DBG_NOISE,     "--fixpn-dbg-noise",    "Pattern noise: show noise image (original - denoised)" },
             { &fixpn_flags1,   FIXPN_DBG_MASK,      "--fixpn-dbg-mask",     "Pattern noise: show masked areas (edges and highlights)" },
-            { &fixpn_flags2,   FIXPN_DBG_ROWNOISE,  "--fixpn-dbg-row",      "Pattern noise: debug rows (default: columns)" },
+            { &fixpn_flags2,   FIXPN_DBG_COLNOISE,  "--fixpn-dbg-col",      "Pattern noise: debug columns (default: rows)" },
             OPTION_EOL,
         },
     },

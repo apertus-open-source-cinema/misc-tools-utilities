@@ -18,8 +18,8 @@ void fix_pattern_noise(struct raw_info * raw_info, int16_t * raw16, int row_nois
 void highlight_blur(struct raw_info * raw_info, int16_t * raw);
 
 /* debug flags */
-#define FIXPN_DBG_COLNOISE  0
-#define FIXPN_DBG_ROWNOISE  1
+#define FIXPN_DBG_ROWNOISE  0
+#define FIXPN_DBG_COLNOISE  1
 
 #define FIXPN_DBG_DENOISED  2
 #define FIXPN_DBG_NOISE     4
