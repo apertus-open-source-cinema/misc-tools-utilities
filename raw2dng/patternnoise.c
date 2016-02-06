@@ -327,7 +327,10 @@ static void fix_column_noise_rggb(int16_t * raw, int w, int h, int white)
 
     /* fix for both highlights and normally-exposed images */
     /* (could be probably optimized for speed a bit) */
-    for (int hl = 0; hl <= 1; hl++)
+    
+    /* disable highlight processing when showing debug information */
+    int hl_en = !g_debug_flags;
+    for (int hl = 0; hl <= hl_en; hl++)
     {
         fix_column_noise(r,  rs,  w/2, h/2, clip_thr, hl);
         fix_column_noise(g1, g1s, w/2, h/2, clip_thr, hl);
