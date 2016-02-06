@@ -192,7 +192,7 @@ static void fix_column_noise(int16_t * original, int16_t * denoised, int w, int 
             int hgradient = abs(hgrad[x + y*w]);
 
             mask[x + y*w] = 
-                (hgradient > 500) ||   /* mask out pixels on a strong edge, that is clearly not pattern noise */
+                (hgradient > 200) ||   /* mask out pixels on a strong edge, that is clearly not pattern noise */
                 (nonlinear_highlights ? /* row noise is very different in nonlinear (nearly clipped) highlights, compared to the rest of the image */
                        pixel <= clip_thr : /* NL highlights: mask out normally-exposed areas */ 
                        pixel > clip_thr ); /* regular image: mask out nearly-overexposed pixels */
@@ -211,8 +211,8 @@ static void fix_column_noise(int16_t * original, int16_t * denoised, int w, int 
         /* debug: show the noise image */
         for (int i = 0; i < w*h; i++)
         {
-            if (mask[i]) noise[i] = -100;
-            original[i] = noise[i] + 100;
+            if (mask[i]) noise[i] = -1500;
+            original[i] = noise[i] + 1500;
         }
         goto end;
     }
@@ -320,7 +320,7 @@ static void fix_column_noise_rggb(int16_t * raw, int w, int h, int white)
     
     /* strong horizontal denoising (1-D median blur on G, R-G and B-G, stop on edge */
     /* (this step takes a lot of time) */
-    horizontal_edge_aware_blur_rggb(r, g1, g2, b, rs, g1s, g2s, bs, w/2, h/2, 500, 50, 250, clip_thr);
+    horizontal_edge_aware_blur_rggb(r, g1, g2, b, rs, g1s, g2s, bs, w/2, h/2, 200, 50, 250, clip_thr);
     printf("."); fflush(stdout);
 
     /* after blurring horizontally, the difference reveals vertical FPN */
