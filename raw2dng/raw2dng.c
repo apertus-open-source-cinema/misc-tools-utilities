@@ -361,7 +361,7 @@ static int file_exists_warn(char * filename)
 }
 
 /* for dark frames, clip frames, gray frames, stuff like that */
-static void read_reference_frame(char* filename, int16_t * buf, struct raw_info * raw_info, int meta_ystart)
+static void read_reference_frame(char* filename, int16_t * buf, struct raw_info * raw_info, int meta_ystart, int meta_ysize)
 {
     FILE* fp = fopen(filename, "rb");
     CHECK(fp, "could not open %s", filename);
@@ -387,6 +387,25 @@ static void read_reference_frame(char* filename, int16_t * buf, struct raw_info 
 
     int width = dim[0];
     int height = dim[1];
+
+
+    if (meta_ystart)
+    {
+        /* if our frame is cropped, skip as many lines as we need, assuming
+         * the calibration frames are always full-resolution.
+         * Offset file pointer if frame is cropped to only load needed part of ref frame. */
+        if (!meta_ysize)
+        {
+            meta_ysize = height - meta_ystart;
+        }
+        height = meta_ysize;
+
+        if ( fseek(fp, width * meta_ystart * 2, SEEK_CUR) != 0 ) {
+            printf("Failed to set reference file offset\n");
+            exit(1);
+        }
+    }
+
     
     if (width != raw_info->width || height != raw_info->height)
     {
@@ -402,13 +421,6 @@ static void read_reference_frame(char* filename, int16_t * buf, struct raw_info 
 
     /* PGM is big endian, need to reverse it */
     reverse_bytes_order((void*)buf, width * height * 2);
-    
-    if (meta_ystart)
-    {
-        /* if our frame is cropped, skip as many lines as we need, assuming
-         * the calibration frames are always full-resolution */
-        memcpy(buf, buf + meta_ystart * width * 2, (width - meta_ystart) * height * 2);
-    }
 }
 
 static void subtract_dark_frame(struct raw_info * raw_info, int16_t * raw16, int16_t * darkframe, int16_t extra_offset, int16_t * dcnu, float meta_expo)
@@ -1413,6 +1425,7 @@ int main(int argc, char** argv)
         int meta_gain = 0;
         float meta_expo = 0;
         int meta_ystart = 0;
+        int meta_ysize = 0;
         
         if (raw16)
         {
@@ -1430,6 +1443,7 @@ int main(int argc, char** argv)
             meta_gain = metadata_get_gain(registers);
             meta_expo = metadata_get_exposure(registers);
             meta_ystart = metadata_get_ystart(registers);
+            meta_ysize = metadata_get_ysize(registers);
             
             if (dump_regs)
             {
@@ -1536,13 +1550,13 @@ int main(int argc, char** argv)
             int16_t * dcnu = 0;
             int extra_offset = 0;
 
-            read_reference_frame(dark_filename, dark, &raw_info, meta_ystart);
+            read_reference_frame(dark_filename, dark, &raw_info, meta_ystart, meta_ysize);
             
             if (use_dcnuframe)
             {
                 printf("DCNU frame  : %s\n", dcnu_filename);
                 dcnu = malloc(raw_info.width * raw_info.height * sizeof(dcnu[0]));
-                read_reference_frame(dcnu_filename, dcnu, &raw_info, meta_ystart);
+                read_reference_frame(dcnu_filename, dcnu, &raw_info, meta_ystart, meta_ysize);
             }
             else
             {
@@ -1565,7 +1579,7 @@ int main(int argc, char** argv)
         {
             printf("Gain frame  : %s\n", gain_filename);
             uint16_t * gain = malloc(raw_info.width * raw_info.height * sizeof(gain[0]));
-            read_reference_frame(gain_filename, (int16_t*) gain, &raw_info, meta_ystart);
+            read_reference_frame(gain_filename, (int16_t*) gain, &raw_info, meta_ystart, meta_ysize);
             apply_gain_frame(&raw_info, raw16, gain);
             free(gain);
         }
@@ -1575,7 +1589,7 @@ int main(int argc, char** argv)
             /* note: when computing the clip frame, you should also apply dark and gain frames to it */
             printf("Clip frame  : %s\n", clip_filename);
             uint16_t * clip = malloc(raw_info.width * raw_info.height * sizeof(clip[0]));
-            read_reference_frame(clip_filename, (int16_t*) clip, &raw_info, meta_ystart);
+            read_reference_frame(clip_filename, (int16_t*) clip, &raw_info, meta_ystart, meta_ysize);
             apply_clip_frame(&raw_info, raw16, clip);
             free(clip);
         }

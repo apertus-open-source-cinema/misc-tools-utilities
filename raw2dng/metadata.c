@@ -100,6 +100,10 @@ int metadata_get_ystart(uint16_t registers[128])
 {
     return registers[2];
 }
+int metadata_get_ysize(uint16_t registers[128])
+{
+    return registers[34];
+}
 
 void metadata_dump_registers(uint16_t registers[128])
 {
