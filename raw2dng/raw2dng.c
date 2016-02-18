@@ -248,6 +248,91 @@ static void calc_black_columns_offset(struct raw_info * raw_info, int16_t * raw1
     *avg_offset = (offsets[0] + offsets[1] + offsets[2] + offsets[3] + 2) / 4;
 }
 
+/* check how well a fixed frequency signal fits the row noise; return coefficients for sin and cos */
+/* return value: norm([ks kc]) */
+static double check_fixed_freq(int* row_noise, int n, double f, double* out_ks, double* out_kc)
+{
+    double ks = 0;
+    double kc = 0;
+    for (int i = 0; i < n; i++)
+    {
+        ks += sin(2*M_PI*f*i) * row_noise[i];
+        kc += cos(2*M_PI*f*i) * row_noise[i];
+    }
+    
+    /* fixme: why n/2?
+     * it works that way, but I need to check the Fourier series theory again */
+    ks /= (n/2);
+    kc /= (n/2);
+    
+    if (out_ks) *out_ks = ks;
+    if (out_kc) *out_kc = kc;
+    
+    return sqrt(ks*ks + kc*kc);
+}
+
+/* remove a fixed-frequency signal from the row_noise vector */
+static void fix_fixed_freq(int* row_noise, int n, double f)
+{
+    double ks, kc;
+    check_fixed_freq(row_noise, n, f, &ks, &kc);
+
+    for (int i = 0; i < n; i++)
+    {
+        double ff = sin(2*M_PI*f*i) * ks + cos(2*M_PI*f*i) * kc;;
+        row_noise[i] -= round(ff);
+    }
+}
+
+/* todo: would golden section search help here? */
+static double scan_fixed_freq(int* row_noise, int n, double lo, double hi, double* out_mag)
+{
+    //~ printf("Scanning 1/%g...1/%g\n", 1/lo, 1/hi);
+    double best_k = 0;
+    double best_f = 0;
+    
+    /* use 200 log increments */
+    double step = pow(hi/lo, 1/199.0);
+    for (double f = lo; f < hi; f *= step)
+    {
+        double k = check_fixed_freq(row_noise, n, f, 0, 0);
+        //~ printf("1/%g: %g\n", 1/f, k);
+        if (k > best_k)
+        {
+            best_k = k;
+            best_f = f;
+        }
+    }
+    
+    if (hi - lo > 1e-4)
+    {
+        return scan_fixed_freq(row_noise, n, best_f / step, best_f * step, out_mag);
+    }
+    
+    if (out_mag) *out_mag = best_k;
+    return best_f;
+}
+
+static void remove_fixed_frequencies(int* row_noise, int n)
+{
+    double mag = 0;
+    double thr = 0.25;
+    do
+    {
+        double f = scan_fixed_freq(row_noise, n, 1/100.0, 1/2.0, &mag);
+        
+        /* scale "mag" to 12-bit DN units */
+        mag = mag/16/8;
+
+        if (mag >= thr)
+        {
+            printf("Fixed freq  : 1/%.4g (mag=%.3g)\n", 1/f, mag);
+            fix_fixed_freq(row_noise, n, f);
+        }
+    }
+    while (mag < thr);
+}
+
 static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
 {
     int w = raw_info->width;
@@ -272,36 +357,27 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
             raw16[x + y*w] -= off;
         }
     }
-        
+    
     printf("Row noise from black columns...\n");
+    
     /**
-     * Do not subtract the full black column variations. Here's why:
+     * Before rushing to correct row noise using black column variations,
+     * let's take a look at the frequency components of the two signals.
      * 
-     * Kalman filter theory: http://robocup.mi.fu-berlin.de/buch/kalman.pdf
+     * We will notice that our black columns may contain a strong periodical
+     * component, repeating every 10...50 pixels.
      * 
-     * From page 3, if we know how noisy our estimations are,
-     * the optimal weights are inversely proportional with the noise variances:
+     * The value differs between images, but appears to be identical on images
+     * from the same set. It doesn't change with exposure time. Cause is unknown.
      * 
-     * x_optimal = (x1 * var(x2) + x2 * var(x1)) / (var(x1) + var(x2))
-     * 
-     * Here, let's say R = x1 is row noise (stdev = 1.6 at gain=x1) and x2 is
-     * black column noise: B = mean(black_col') = R + x2 => x2 = B - R,
-     * x2 can be estimated as mean(black_col') - mean(active_area'),
-     * stdev(x2) = 1.3.
-     * 
-     * We want to find k that minimizes var(R - k*B).
-     * 
-     * var(R - k*B) = var(x1 * (1-k) - x2 * k),
-     * so k = var(x1)) / (var(x1) + var(x2).
+     * This perturbation has to be removed before trying to correct row noise,
+     * otherwise fixing the row noise will have the side effect of introducing
+     * a strong sine component into the main image.
      */
-    /* fixme: values only valid for gain=x1 */
-    float row_noise_std = 1.6;
-    float black_col_noise_std = 1.3;
-    float blackcol_ratio = row_noise_std*row_noise_std /
-        (row_noise_std*row_noise_std + black_col_noise_std*black_col_noise_std);
     
+    /* row noise x16 */
     int* row_noise = malloc(h * sizeof(row_noise[0]));
-    
+
     for (int y = 0; y < h; y++)
     {
         int acc = 0;
@@ -314,9 +390,38 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
             }
             acc += raw16[x + y*w] - target_black_level;
         }
-        row_noise[y] = round(acc * blackcol_ratio / 16);
+        row_noise[y] = acc;
     }
     
+    remove_fixed_frequencies(row_noise, h);
+    
+    /**
+     * Do not subtract the full black column variations. Here's why:
+     * 
+     * Kalman filter theory: http://robocup.mi.fu-berlin.de/buch/kalman.pdf
+     * 
+     * From page 3, if we know how noisy our estimations are,
+     * the optimal weights are inversely proportional with the noise variances:
+     * 
+     * x_optimal = (x1 * var(x2) + x2 * var(x1)) / (var(x1) + var(x2))
+     * 
+     * Here, let's say R = x1 is row noise (stdev = 1.45 at gain=x1) and x2 is
+     * black column noise: B = mean(black_col') = R + x2 => x2 = B - R,
+     * x2 can be estimated as mean(black_col') - mean(active_area'),
+     * stdev(x2) = 0.75.
+     * 
+     * We want to find k that minimizes var(R - k*B).
+     * 
+     * var(R - k*B) = var(x1 * (1-k) - x2 * k),
+     * so k = var(x1)) / (var(x1) + var(x2).
+     */
+    /* fixme: values only valid for gain=x1 */
+    /* todo: autodetect these values from dark frames */
+    float row_noise_std = 1.45;
+    float black_col_noise_std = 0.75;
+    float blackcol_ratio = row_noise_std*row_noise_std /
+        (row_noise_std*row_noise_std + black_col_noise_std*black_col_noise_std);
+
     int acc = 0;
     for (int y = 0; y < h; y++)
     {
@@ -326,9 +431,11 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
 
     for (int y = 0; y < h; y++)
     {
+        int offset = (row_noise[y] - row_noise_mean) * blackcol_ratio / 16;
+        
         for (int x = 0; x < w; x++)
         {
-            raw16[x + y*w] -= row_noise[y] - row_noise_mean;
+            raw16[x + y*w] -= offset;
         }
     }
     
