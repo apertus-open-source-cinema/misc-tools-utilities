@@ -324,13 +324,13 @@ static void remove_fixed_frequencies(int* row_noise, int n)
         /* scale "mag" to 12-bit DN units */
         mag = mag/16/8;
 
-        if (mag >= thr)
+        if (mag > thr)
         {
             printf("Fixed freq  : 1/%.4g (mag=%.3g)\n", 1/f, mag);
             fix_fixed_freq(row_noise, n, f);
         }
     }
-    while (mag < thr);
+    while (mag > thr);
 }
 
 static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
