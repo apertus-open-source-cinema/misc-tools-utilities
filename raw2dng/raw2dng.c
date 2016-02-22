@@ -1939,6 +1939,12 @@ cleanup:
     if (calc_darkframe)
     {
         calc_avgframe_finish(dark_filename, &raw_info, CALC_DARK_FRAME);
+        
+        if (file_exists(dcnu_filename))
+        {
+            printf("Removing %s...\n", dcnu_filename);
+            unlink(dcnu_filename);
+        }
     }
     else if (calc_dcnuframe)
     {
