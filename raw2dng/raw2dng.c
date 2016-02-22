@@ -326,10 +326,10 @@ static double scan_fixed_freq(int* row_noise, int n, double lo, double hi, doubl
 static void remove_fixed_frequencies(int* row_noise, int n)
 {
     double mag = 0;
-    double thr = 0.25;
+    double thr = 0.5;
     do
     {
-        double f = scan_fixed_freq(row_noise, n, 1/100.0, 1/2.0, &mag);
+        double f = scan_fixed_freq(row_noise, n, 1/250.0, 1/2.0, &mag);
         
         /* scale "mag" to 12-bit DN units */
         mag = mag/16/8;
