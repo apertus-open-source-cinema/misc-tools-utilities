@@ -72,6 +72,8 @@ int no_dcnuframe = 0;
 int no_gainframe = 0;
 int no_clipframe = 0;
 int no_blackcol = 0;
+int no_blackcol_rn = 0;
+int no_blackcol_ff = 0;
 int no_processing = 0;
 
 int calc_darkframe = 0;
@@ -112,7 +114,9 @@ struct cmd_group options[] = {
             { &no_blackcol,    1,"--no-blackcol",  "Disable black reference column subtraction\n"
                              "                      - enabled by default if a dark frame is used\n"
                              "                      - reduces row noise and black level variations" },
-
+            { &no_blackcol_rn,1,"--no-blackcol-rn","Disable row noise correction from black columns\n"
+                             "                      (they are still used to correct static offsets)\n" },
+            { &no_blackcol_ff,1,"--no-blackcol-ff","Disable fixed frequency correction in black columns\n" },
             { &calc_darkframe,1,"--calc-darkframe","Average a dark frame from all input files" },
             { &calc_dcnuframe,1,"--calc-dcnuframe","Fit a dark frame (constant offset) and a dark current frame\n"
                              "                      (exposure-dependent offset) from files with different exposures\n"
@@ -357,6 +361,11 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
             raw16[x + y*w] -= off;
         }
     }
+
+    if (no_blackcol_rn)
+    {
+        return;
+    }
     
     printf("Row noise from black columns...\n");
     
@@ -393,7 +402,10 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
         row_noise[y] = acc;
     }
     
-    remove_fixed_frequencies(row_noise, h);
+    if (!no_blackcol_ff)
+    {
+        remove_fixed_frequencies(row_noise, h);
+    }
     
     /**
      * Do not subtract the full black column variations. Here's why:
