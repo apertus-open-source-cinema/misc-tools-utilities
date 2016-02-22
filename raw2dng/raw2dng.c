@@ -1223,24 +1223,24 @@ static void check_darkframe_iq(struct raw_info * raw_info, int16_t * raw16)
     double* col_avg = malloc(w * sizeof(col_avg[0]));
     double* center_crop = malloc(500 * 500 * sizeof(center_crop[0]));
 
-    for (int y = 0; y < h; y++)
+    for (int y = 50; y < h-50; y++)
     {
         int acc = 0;
-        for (int x = 8; x < w-8; x++)
+        for (int x = 50; x < w-50; x++)
         {
             acc += raw16[x + y*w];
         }
-        row_avg[y] = (double) acc / (w - 16);
+        row_avg[y] = (double) acc / (w - 100);
     }
 
-    for (int x = 8; x < w-8; x++)
+    for (int x = 50; x < w-50; x++)
     {
         int acc = 0;
-        for (int y = 0; y < h; y++)
+        for (int y = 50; y < h-50; y++)
         {
             acc += raw16[x + y*w];
         }
-        col_avg[x] = (double) acc / h;
+        col_avg[x] = (double) acc / (h - 100);
     }
 
     int n = 0;
@@ -1253,10 +1253,10 @@ static void check_darkframe_iq(struct raw_info * raw_info, int16_t * raw16)
     }
     
     /* scale values to 12-bit DN */
-    double avg = mean(row_avg, h) / 8;
+    double avg = mean(row_avg+50, h-100) / 8;
     double pix_noise = std(center_crop, n) / 8;
-    double row_noise = std(row_avg, h) / 8;
-    double col_noise = std(col_avg+8, w-16) / 8;
+    double row_noise = std(row_avg+50, h-100) / 8;
+    double col_noise = std(col_avg+50, w-100) / 8;
     
     printf("Average     : %.2f\n", avg);
     printf("Pixel noise : %.2f\n", pix_noise);
