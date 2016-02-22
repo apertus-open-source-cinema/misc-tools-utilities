@@ -74,6 +74,7 @@ int no_clipframe = 0;
 int no_blackcol = 0;
 int no_blackcol_rn = 0;
 int no_blackcol_ff = 0;
+int dc_hot_pixels = 0;
 int no_processing = 0;
 
 int calc_darkframe = 0;
@@ -119,6 +120,7 @@ struct cmd_group options[] = {
             { &no_blackcol_rn,1,"--no-blackcol-rn","Disable row noise correction from black columns\n"
                              "                      (they are still used to correct static offsets)\n" },
             { &no_blackcol_ff,1,"--no-blackcol-ff","Disable fixed frequency correction in black columns\n" },
+            { &dc_hot_pixels,1, "--dchp",          "Measure hot pixels to scale dark current frame\n" },
             { &calc_darkframe,1,"--calc-darkframe","Average a dark frame from all input files" },
             { &calc_dcnuframe,1,"--calc-dcnuframe","Fit a dark frame (constant offset) and a dark current frame\n"
                              "                      (exposure-dependent offset) from files with different exposures\n"
@@ -546,7 +548,7 @@ static void read_reference_frame(char* filename, int16_t * buf, struct raw_info 
     reverse_bytes_order((void*)buf, width * height * 2);
 }
 
-static void subtract_dark_frame(struct raw_info * raw_info, int16_t * raw16, int16_t * darkframe, int16_t extra_offset, int16_t * dcnu, float meta_expo)
+static void subtract_dark_frame(struct raw_info * raw_info, int16_t * raw16, int16_t * darkframe, int16_t extra_offset, int16_t * darkcurrent_frame, float meta_expo)
 {
     /* note: data in dark frames is multiplied by 8 (already done when promoting to raw16)
      * and offset by DARKFRAME_OFFSET, to allow corrections below black level */
@@ -560,9 +562,9 @@ static void subtract_dark_frame(struct raw_info * raw_info, int16_t * raw16, int
         {
             int i = x + y*w;
             
-            if (dcnu)
+            if (darkcurrent_frame)
             {
-                float dc = (float) (dcnu[i] - DCNUFRAME_OFFSET) * 8 / DCNUFRAME_SCALING;
+                float dc = (float) (darkcurrent_frame[i] - DCNUFRAME_OFFSET) * 8 / DCNUFRAME_SCALING;
                 dark_current = (int)roundf(dc * meta_expo);
             }
             
@@ -581,6 +583,63 @@ static void subtract_dark_frame(struct raw_info * raw_info, int16_t * raw16, int
             }
         }
     }
+}
+
+static float measure_hot_pixels(struct raw_info * raw_info, int16_t * raw16, int16_t * darkcurrent)
+{
+    int hotpixels[512];
+    int num_hotpix = 0;
+    
+    /* identify hot pixels from dark current frame */
+    /* average value is 0.06 DN/ms; only select pixels with much higher dark currents */
+    int thr = 0.5 * DCNUFRAME_SCALING + DCNUFRAME_OFFSET;
+    
+    int w = raw_info->width;
+    int h = raw_info->height;
+    for (int y = 50; y < h-50; y++)
+    {
+        for (int x = 50; x < w-50; x++)
+        {
+            if (darkcurrent[x + y*w] > thr && num_hotpix < COUNT(hotpixels))
+            {
+                hotpixels[num_hotpix++] = x + y*w;
+            }
+        }
+    }
+    
+    //~ printf("%d hot pixels, ", num_hotpix);
+    
+    int mags[512];
+    for (int i = 0; i < num_hotpix; i++)
+    {
+        int k = hotpixels[i];
+        int pr = raw16[k];              /* hot pixel from current image */
+        int pd = darkcurrent[k];        /* hot pixel from dark current frame */
+        int nr = 0;                     /* neighbour average from current image */
+        int nd = 0;                     /* neighbour average from dark current frame */
+        for (int dy = -1; dy <= 1; dy++)
+        {
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                if (dx || dy)
+                {
+                    nr += raw16[k + dx*2 + dy*2*w];
+                    nd += darkcurrent[k + dx*2 + dy*2*w];
+                }
+            }
+        }
+        
+        /* scaling factor between measured and reference intensity of the hot pixel */
+        /* where "intensity" of a hot pixel is its value minus the average of its 8 neighbours
+         * from the same color channel */
+        double ref = pd * 8 - nd;
+        double meas = (pr * 8 - nr);
+        mags[i] = round(meas * (8192/8) * DCNUFRAME_SCALING / ref);
+    }
+
+    float intensity = median_int_wirth(mags, num_hotpix) / 8192.0;
+    
+    return intensity;
 }
 
 static void apply_gain_frame(struct raw_info * raw_info, int16_t * raw16, uint16_t * dark)
@@ -1751,16 +1810,23 @@ int main(int argc, char** argv)
         {
             printf("Dark frame  : %s\n", dark_filename);
             int16_t * dark = malloc(raw_info.width * raw_info.height * sizeof(dark[0]));
-            int16_t * dcnu = 0;
+            int16_t * darkcurrent = 0;
+            float darkcurrent_scaling = 0;
             int extra_offset = 0;
 
             read_reference_frame(dark_filename, dark, &raw_info, meta_ystart, meta_ysize);
             
             if (use_dcnuframe)
             {
-                printf("DCNU frame  : %s\n", dcnu_filename);
-                dcnu = malloc(raw_info.width * raw_info.height * sizeof(dcnu[0]));
-                read_reference_frame(dcnu_filename, dcnu, &raw_info, meta_ystart, meta_ysize);
+                printf("Dark current: %s ", dcnu_filename);
+                darkcurrent = malloc(raw_info.width * raw_info.height * sizeof(darkcurrent[0]));
+                read_reference_frame(dcnu_filename, darkcurrent, &raw_info, meta_ystart, meta_ysize);
+
+                darkcurrent_scaling = 
+                    (dc_hot_pixels) ? measure_hot_pixels(&raw_info, raw16, darkcurrent)
+                                    : meta_expo ;
+
+                printf("x %.1f\n", darkcurrent_scaling);
             }
             else
             {
@@ -1769,9 +1835,9 @@ int main(int argc, char** argv)
                 extra_offset = dark_current;
             }
 
-            subtract_dark_frame(&raw_info, raw16, dark, extra_offset, dcnu, meta_expo);
+            subtract_dark_frame(&raw_info, raw16, dark, extra_offset, darkcurrent, darkcurrent_scaling);
             free(dark);
-            if (dcnu) free(dcnu);
+            if (darkcurrent) free(darkcurrent);
         }
 
         if (!no_blackcol)
