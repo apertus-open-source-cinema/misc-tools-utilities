@@ -81,6 +81,8 @@ int calc_clipframe = 0;
 int calc_gainframe = 0;
 int calc_dcnuframe = 0;
 
+int check_darkframe = 0;
+
 struct cmd_group options[] = {
     {
         "General options", (struct cmd_option[]) {
@@ -123,6 +125,8 @@ struct cmd_group options[] = {
                              "                      (starting point: 256 frames with exposures from 1 to 50 ms)" },
             { &calc_gainframe,1,"--calc-gainframe","Average a gain frame (aka flat field frame)" },
             { &calc_clipframe,1,"--calc-clipframe","Average a clip (overexposed) frame" },
+            { &check_darkframe,1,"--check-darkframe","Check image quality indicators on a dark frame" },
+            
             OPTION_EOL,
         },
     },
@@ -1123,6 +1127,87 @@ static void calc_linfitframes_finish(char* offset_filename, char* gain_filename,
     memset(&L, 0, sizeof(L));
 }
 
+/* like octave mean(x) */
+static double mean(double* X, int N)
+{
+    double sum = 0;
+
+    for (int i = 0; i < N; i++)
+    {
+        sum += X[i];
+    }
+    
+    return sum / N;
+}
+
+/* like octave std(x) */
+static double std(double* X, int N)
+{
+    double m = mean(X, N);
+    double stdev = 0;
+
+    for (int i = 0; i < N; i++)
+    {
+        double dif = X[i] - m;
+        stdev += dif * dif;
+    }
+    
+    return sqrt(stdev / N);
+}
+
+static void check_darkframe_iq(struct raw_info * raw_info, int16_t * raw16)
+{
+    int w = raw_info->width;
+    int h = raw_info->height;
+
+    double* row_avg = malloc(h * sizeof(row_avg[0]));
+    double* col_avg = malloc(w * sizeof(col_avg[0]));
+    double* center_crop = malloc(500 * 500 * sizeof(center_crop[0]));
+
+    for (int y = 0; y < h; y++)
+    {
+        int acc = 0;
+        for (int x = 8; x < w-8; x++)
+        {
+            acc += raw16[x + y*w];
+        }
+        row_avg[y] = (double) acc / (w - 16);
+    }
+
+    for (int x = 8; x < w-8; x++)
+    {
+        int acc = 0;
+        for (int y = 0; y < h; y++)
+        {
+            acc += raw16[x + y*w];
+        }
+        col_avg[x] = (double) acc / h;
+    }
+
+    int n = 0;
+    for (int y = h/2 - 250; y < h/2 + 250; y++)
+    {
+        for (int x = w/2 - 250; x < w/2 + 250; x++)
+        {
+            center_crop[n++] = raw16[x + y*w];
+        }
+    }
+    
+    /* scale values to 12-bit DN */
+    double avg = mean(row_avg, h) / 8;
+    double pix_noise = std(center_crop, n) / 8;
+    double row_noise = std(row_avg, h) / 8;
+    double col_noise = std(col_avg+8, w-16) / 8;
+    
+    printf("Average     : %.2f\n", avg);
+    printf("Pixel noise : %.2f\n", pix_noise);
+    printf("Row noise   : %.2f (%.1f%%)\n", row_noise, row_noise / pix_noise * 100);
+    printf("Col noise   : %.2f (%.1f%%)\n", col_noise, col_noise / pix_noise * 100);
+    free(center_crop);
+    free(row_avg);
+    free(col_avg);
+}
+
 /* pack raw data from 16-bit to 12-bit */
 /* this also adds some anti-posterization noise,
  * which acts somewhat like introducing one extra bit of detail */
@@ -1650,9 +1735,9 @@ int main(int argc, char** argv)
 
         int raw16_postprocessing = (raw16 ||
              calc_darkframe || calc_dcnuframe || calc_gainframe || calc_clipframe ||
-             use_darkframe  || use_gainframe  || use_clipframe  ||
+             use_darkframe  || use_gainframe  || use_clipframe  || check_darkframe ||
              use_lut || fixpn);
-        
+
         if (raw16_postprocessing && !raw16)
         {
             /* if we process the raw data, unpack it to int16_t (easier to work with) */
@@ -1761,6 +1846,11 @@ int main(int argc, char** argv)
             /* no need to repack to 12 bits */
             free(raw16); raw16 = 0;
             goto cleanup;
+        }
+        
+        if (check_darkframe)
+        {
+            check_darkframe_iq(&raw_info, raw16);
         }
 
         if (raw16_postprocessing)
