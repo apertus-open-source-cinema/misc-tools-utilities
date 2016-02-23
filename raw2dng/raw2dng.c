@@ -75,6 +75,7 @@ int no_blackcol = 0;
 int no_blackcol_rn = 0;
 int no_blackcol_ff = 0;
 int rownoise_filter = 0;
+int rownoise_export_octave = 0;
 int dc_hot_pixels = 0;
 int no_processing = 0;
 
@@ -121,7 +122,9 @@ struct cmd_group options[] = {
             { &no_blackcol_rn,1,"--no-blackcol-rn","Disable row noise correction from black columns\n"
                              "                      (they are still used to correct static offsets)\n" },
             { &no_blackcol_ff,1,"--no-blackcol-ff","Disable fixed frequency correction in black columns\n" },
-            { &rownoise_filter,1,"--rnex",         "Experimental FIR filter for row noise correction from black columns\n" },
+            { &rownoise_filter,1,"--rnfilter=1",   "FIR filter for row noise correction from black columns" },
+            { &rownoise_filter,2,"--rnfilter=2",   "FIR filter for row noise correction from black columns\n"
+                             "                      and per-row median differences in green channels" },
             { &dc_hot_pixels,1, "--dchp",          "Measure hot pixels to scale dark current frame\n" },
             { &calc_darkframe,1,"--calc-darkframe","Average a dark frame from all input files" },
             { &calc_dcnuframe,1,"--calc-dcnuframe","Fit a dark frame (constant offset) and a dark current frame\n"
@@ -141,6 +144,7 @@ struct cmd_group options[] = {
             { &fixpn_flags1,   FIXPN_DBG_NOISE,     "--fixpn-dbg-noise",    "Pattern noise: show noise image (original - denoised)" },
             { &fixpn_flags1,   FIXPN_DBG_MASK,      "--fixpn-dbg-mask",     "Pattern noise: show masked areas (edges and highlights)" },
             { &fixpn_flags2,   FIXPN_DBG_COLNOISE,  "--fixpn-dbg-col",      "Pattern noise: debug columns (default: rows)" },
+            { &rownoise_export_octave, 1,           "--export-rownoise"     "Export row noise data to octave (rownoise_data.m)" },
             OPTION_EOL,
         },
     },
@@ -442,6 +446,72 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
     float blackcol_ratio = black_col_std*black_col_std /
         (black_col_std*black_col_std + black_col_noise_std*black_col_noise_std);
 
+    /**
+     * The difference between the two green channels is another great
+     * source of information about the row noise.
+     * 
+     * We'll compute it at lags -2, -1, 1, 2.
+     */
+
+    int* green_delta[4];
+    int lags[4] = {-2, -1 , 1, 2};
+    int* samples = malloc(w/2 * sizeof(samples[0]));
+    
+    for (int k = 0; k < 4; k++)
+    {
+        green_delta[k] = malloc(h * sizeof(green_delta[0][0]));
+        
+        for (int y = 2; y < h-2; y++)
+        {
+            for (int x = 8 + y%2; x < w-8; x += 2)
+            {
+                /* when x and y have the same parity, we are on a green channel (GBRG) */
+                int lag = lags[k];
+                samples[x/2-4] = raw16[x + y*w] - raw16[x - lag%2 + (y+lag) * w];
+            }
+            /* green_delta is also multiplied by 16, like black_col */
+            green_delta[k][y] = median_int_wirth(samples, (w-16) / 2) * 16;
+        }
+    }
+
+    if (rownoise_export_octave)
+    {
+        /* export row noise and its predictors to octave */
+        FILE* f = fopen("rownoise_data.m", "w");
+        fprintf(f, "black_col = [ ");
+        for (int y = 50; y < h-50; y++)
+        {
+            fprintf(f, "%d ", black_col[y]);
+        }
+        fprintf(f, "]' / 8 / 16;\n");
+        
+        fprintf(f, "green_delta = [\n");
+        for (int k = 0; k < 4; k++)
+        {
+            fprintf(f, "    ");
+            for (int y = 50; y < h-50; y++)
+            {
+                fprintf(f, "%d ", green_delta[k][y]);
+            }
+            fprintf(f, "\n");
+        }
+        fprintf(f, "]' / 8 / 16;\n");
+
+        fprintf(f, "row_noise = [ ");
+        for (int y = 50; y < h-50; y++)
+        {
+            int acc = 0;
+            for (int x = 50; x < w-50; x++)
+            {
+                acc += raw16[x + y*w];
+            }
+            fprintf(f, "%d ", acc);
+        }
+        fprintf(f, "]' / 8 / %d - 128;\n", w - 100);
+        
+        fclose(f);
+    }
+
     for (int y = 2; y < h-2; y++)
     {
         int offset = (
@@ -449,7 +519,9 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
                 ? (
                     /* simple filter based on optimal averaging of random variables */
                     black_col[y] * blackcol_ratio
-                ) : (
+                ) :
+            (rownoise_filter == 1)
+                ? (
                     /* a little more complex filter (experimental) */
                     (y % 2)
                        ?
@@ -458,7 +530,30 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
                        :
                          black_col[y]   *  0.38 +
                          black_col[y+1] *  0.43
-                )
+                ) :
+            (rownoise_filter == 2)
+                ? (
+                    /* an even more complex filter that also uses green channel differences (experimental) */
+                    (y % 2)
+                       ?
+                         black_col[y-2]    * 0.17 +
+                         black_col[y-1]    * 0.14 +
+                         black_col[y+0]    * 0.17 +
+                         black_col[y+1]    * 0.16 +
+                         black_col[y+2]    * 0.14 +
+                         green_delta[0][y] * 0.22 +
+                         green_delta[1][y] * 0.31 +
+                         green_delta[2][y] * 0.38
+                       :
+                         black_col[y-2]    * 0.12 +
+                         black_col[y-1]    * 0.13 +
+                         black_col[y+0]    * 0.14 +
+                         black_col[y+1]    * 0.14 +
+                         black_col[y+2]    * 0.12 +
+                         black_col[y+3]    * 0.12 +
+                         green_delta[0][y] * 0.33 +
+                         green_delta[3][y] * 0.32
+                ) : 0
         ) / 16;
         
         for (int x = 0; x < w; x++)
@@ -467,7 +562,13 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
         }
     }
     
+    free(samples);
     free(black_col);
+
+    for (int i = 0; i < 4; i++)
+    {
+        free(green_delta[i]);
+    }
 }
 
 static void reverse_bytes_order(uint8_t* buf, int count)
