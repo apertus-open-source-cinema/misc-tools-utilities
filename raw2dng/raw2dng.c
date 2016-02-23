@@ -74,7 +74,7 @@ int no_clipframe = 0;
 int no_blackcol = 0;
 int no_blackcol_rn = 0;
 int no_blackcol_ff = 0;
-int blackcol_rn_filter = 0;
+int rownoise_filter = 0;
 int dc_hot_pixels = 0;
 int no_processing = 0;
 
@@ -121,7 +121,7 @@ struct cmd_group options[] = {
             { &no_blackcol_rn,1,"--no-blackcol-rn","Disable row noise correction from black columns\n"
                              "                      (they are still used to correct static offsets)\n" },
             { &no_blackcol_ff,1,"--no-blackcol-ff","Disable fixed frequency correction in black columns\n" },
-            { &blackcol_rn_filter,1,"--rnex",      "Experimental FIR filter for row noise correction from black columns\n" },
+            { &rownoise_filter,1,"--rnex",         "Experimental FIR filter for row noise correction from black columns\n" },
             { &dc_hot_pixels,1, "--dchp",          "Measure hot pixels to scale dark current frame\n" },
             { &calc_darkframe,1,"--calc-darkframe","Average a dark frame from all input files" },
             { &calc_dcnuframe,1,"--calc-dcnuframe","Fit a dark frame (constant offset) and a dark current frame\n"
@@ -392,8 +392,8 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
      * a strong sine component into the main image.
      */
     
-    /* row noise x16 */
-    int* row_noise = malloc(h * sizeof(row_noise[0]));
+    /* black column row averages x16 */
+    int* black_col = malloc(h * sizeof(black_col[0]));
 
     for (int y = 0; y < h; y++)
     {
@@ -407,12 +407,12 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
             }
             acc += raw16[x + y*w] - target_black_level;
         }
-        row_noise[y] = acc;
+        black_col[y] = acc;
     }
     
     if (!no_blackcol_ff)
     {
-        remove_fixed_frequencies(row_noise, h);
+        remove_fixed_frequencies(black_col, h);
     }
     
     /**
@@ -437,34 +437,27 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
      */
     /* fixme: values only valid for gain=x1 */
     /* todo: autodetect these values from dark frames */
-    float row_noise_std = 1.45;
+    float black_col_std = 1.45;
     float black_col_noise_std = 0.75;
-    float blackcol_ratio = row_noise_std*row_noise_std /
-        (row_noise_std*row_noise_std + black_col_noise_std*black_col_noise_std);
-
-    int acc = 0;
-    for (int y = 0; y < h; y++)
-    {
-        acc += row_noise[y];
-    }
-    int row_noise_mean = (acc + h/2) / h;
+    float blackcol_ratio = black_col_std*black_col_std /
+        (black_col_std*black_col_std + black_col_noise_std*black_col_noise_std);
 
     for (int y = 2; y < h-2; y++)
     {
         int offset = (
-            (blackcol_rn_filter == 0)
+            (rownoise_filter == 0)
                 ? (
                     /* simple filter based on optimal averaging of random variables */
-                    (row_noise[y] - row_noise_mean) * blackcol_ratio
+                    black_col[y] * blackcol_ratio
                 ) : (
                     /* a little more complex filter (experimental) */
                     (y % 2)
-                        ?
-                         (row_noise[y-1] - row_noise_mean) *  0.24 +
-                         (row_noise[y]   - row_noise_mean) *  0.63
-                        :
-                         (row_noise[y]   - row_noise_mean) *  0.38 +
-                         (row_noise[y+1] - row_noise_mean) *  0.43
+                       ?
+                         black_col[y-1] *  0.24 +
+                         black_col[y]   *  0.63
+                       :
+                         black_col[y]   *  0.38 +
+                         black_col[y+1] *  0.43
                 )
         ) / 16;
         
@@ -474,7 +467,7 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
         }
     }
     
-    free(row_noise);
+    free(black_col);
 }
 
 static void reverse_bytes_order(uint8_t* buf, int count)
