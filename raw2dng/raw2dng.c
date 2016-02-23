@@ -103,15 +103,27 @@ struct cmd_group options[] = {
             { &hdmi_ramdump,   1,  "--hdmi",       "Assume the input is a memory dump\n"
                              "                      used for HDMI recording experiments" },
             { &use_lut,        1,  "--lut",        "Use a 1D LUT (lut-xN.spi1d, N=gain, OCIO-like)\n" },
-            { &fixpn,          1,  "--fixrn",      "Fix row noise (slow)" },
-            { &fixpn,          2,  "--fixpn",      "Fix row and column noise, aka pattern noise (SLOW)" },
             { &no_processing,  1, "--totally-raw", "Copy the raw data without any manipulation\n"
                              "                      - metadata and pixel reordering are allowed." },
             OPTION_EOL,
         },
     },
     {
+        "Pattern noise correction", (struct cmd_option[]) {
+            { &rownoise_filter,1,"--rnfilter=1",   "FIR filter for row noise correction from black columns" },
+            { &rownoise_filter,2,"--rnfilter=2",   "FIR filter for row noise correction from black columns\n"
+                             "                      and per-row median differences in green channels" },
+            { &fixpn,          1,  "--fixrn",      "Fix row noise by image filtering (slow, guesswork)" },
+            { &fixpn,          2,  "--fixpn",      "Fix row and column noise (SLOW, guesswork)" },
+            { &no_blackcol_rn,1,"--no-blackcol-rn","Disable row noise correction from black columns\n"
+                             "                      (they are still used to correct static offsets)" },
+            { &no_blackcol_ff,1,"--no-blackcol-ff","Disable fixed frequency correction in black columns" },
+            OPTION_EOL,
+        },
+    },
+    {
         "Flat field correction", (struct cmd_option[]) {
+            { &dc_hot_pixels,  1, "--dchp",        "Measure hot pixels to scale dark current frame" },
             { &no_darkframe,   1,"--no-darkframe", "Disable dark frame (if darkframe-xN.pgm is present)" },
             { &no_dcnuframe,   1,"--no-dcnuframe", "Disable dark current frame (if dcnuframe-xN.pgm is present)" },
             { &no_gainframe,   1,"--no-gainframe", "Disable gain frame (if gainframe-xN.pgm is present)" },
@@ -119,13 +131,6 @@ struct cmd_group options[] = {
             { &no_blackcol,    1,"--no-blackcol",  "Disable black reference column subtraction\n"
                              "                      - enabled by default if a dark frame is used\n"
                              "                      - reduces row noise and black level variations" },
-            { &no_blackcol_rn,1,"--no-blackcol-rn","Disable row noise correction from black columns\n"
-                             "                      (they are still used to correct static offsets)\n" },
-            { &no_blackcol_ff,1,"--no-blackcol-ff","Disable fixed frequency correction in black columns\n" },
-            { &rownoise_filter,1,"--rnfilter=1",   "FIR filter for row noise correction from black columns" },
-            { &rownoise_filter,2,"--rnfilter=2",   "FIR filter for row noise correction from black columns\n"
-                             "                      and per-row median differences in green channels" },
-            { &dc_hot_pixels,1, "--dchp",          "Measure hot pixels to scale dark current frame\n" },
             { &calc_darkframe,1,"--calc-darkframe","Average a dark frame from all input files" },
             { &calc_dcnuframe,1,"--calc-dcnuframe","Fit a dark frame (constant offset) and a dark current frame\n"
                              "                      (exposure-dependent offset) from files with different exposures\n"
@@ -144,7 +149,7 @@ struct cmd_group options[] = {
             { &fixpn_flags1,   FIXPN_DBG_NOISE,     "--fixpn-dbg-noise",    "Pattern noise: show noise image (original - denoised)" },
             { &fixpn_flags1,   FIXPN_DBG_MASK,      "--fixpn-dbg-mask",     "Pattern noise: show masked areas (edges and highlights)" },
             { &fixpn_flags2,   FIXPN_DBG_COLNOISE,  "--fixpn-dbg-col",      "Pattern noise: debug columns (default: rows)" },
-            { &rownoise_export_octave, 1,           "--export-rownoise"     "Export row noise data to octave (rownoise_data.m)" },
+            { &rownoise_export_octave, 1,           "--export-rownoise",    "Export row noise data to octave (rownoise_data.m)" },
             OPTION_EOL,
         },
     },
