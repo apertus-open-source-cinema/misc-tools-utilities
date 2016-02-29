@@ -595,6 +595,12 @@ int main(int argc, char** argv)
         write_ppm(out_filename, rgb);
 
         free(rgb); rgb = 0;
+
+        if (out_4k)
+        {
+            width /= 2;
+            height /= 2;
+        }
     }
     
     printf("Done.\n\n");
