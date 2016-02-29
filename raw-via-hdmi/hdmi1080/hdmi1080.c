@@ -28,7 +28,7 @@
 #include "unistd.h"
 #include "sys/stat.h"
 #include "math.h"
-//#include "cmdoptions.h"
+#include "cmdoptions.h"
 #include "patternnoise.h"
 //#include "wirth.h"
 
@@ -39,6 +39,32 @@ int height;
 
 /* dark frame */
 uint16_t* dark;
+
+/* options */
+int fixpn = 0;
+int fixpn_flags1;
+int fixpn_flags2;
+float exposure = 1;
+
+struct cmd_group options[] = {
+    {
+        "Processing options", (struct cmd_option[]) {
+            { &fixpn,          1,  "--fixpn",        "Fix row and column noise (SLOW, guesswork)" },
+            { (void*)&exposure,1,  "--exposure=%f",  "Exposure compensation" },
+            OPTION_EOL,
+        },
+    },
+    {
+        "Debug options", (struct cmd_option[]) {
+            { &fixpn_flags1,   FIXPN_DBG_DENOISED,  "--fixpn-dbg-denoised", "Pattern noise: show denoised image" },
+            { &fixpn_flags1,   FIXPN_DBG_NOISE,     "--fixpn-dbg-noise",    "Pattern noise: show noise image (original - denoised)" },
+            { &fixpn_flags1,   FIXPN_DBG_MASK,      "--fixpn-dbg-mask",     "Pattern noise: show masked areas (edges and highlights)" },
+            { &fixpn_flags2,   FIXPN_DBG_COLNOISE,  "--fixpn-dbg-col",      "Pattern noise: debug columns (default: rows)" },
+            OPTION_EOL,
+        },
+    },
+    OPTION_GROUP_EOL
+};
 
 #define FAIL(fmt,...) { fprintf(stderr, "Error: "); fprintf(stderr, fmt, ## __VA_ARGS__); fprintf(stderr, "\n"); exit(1); }
 #define CHECK(ok, fmt,...) { if (!(ok)) FAIL(fmt, ## __VA_ARGS__); }
@@ -153,7 +179,7 @@ static void convert_to_linear_and_subtract_darkframe(uint16_t * rgb, uint16_t * 
         /* test footage was recorded with gamma 0.5 */
         /* dark frame median is about 10000 */
         /* clipping point is about 50000 */
-        double gain = (65535 - offset) / 40000.0;
+        double gain = (65535 - offset) / 40000.0 * exposure;
         double rgb2 = rgb[i] / 65535.0; rgb2 *= rgb2;
         double dark2 = dark[i] / 65535.0; dark2 *= dark2;
         rgb[i] = COERCE((rgb2 - dark2) * 65535 * gain + offset, 0, 65535);
@@ -170,8 +196,15 @@ int main(int argc, char** argv)
         printf("  ffmpeg -i input.mov frames%%05d.ppm && %s *.ppm\n", argv[0]);
         printf("  %s input.mov output.mov [todo]\n", argv[0]);
         printf("\n");
+        show_commandline_help(argv[0]);
         return 0;
     }
+
+    /* parse all command-line options */
+    for (int k = 1; k < argc; k++)
+        if (argv[k][0] == '-')
+            parse_commandline_option(argv[k]);
+    show_active_options();
 
     printf("\n");
     
@@ -181,6 +214,9 @@ int main(int argc, char** argv)
     /* all other arguments are input or output files */
     for (int k = 1; k < argc; k++)
     {
+        if (argv[k][0] == '-')
+            continue;
+
         char* out_filename;
 
         printf("\n%s\n", argv[k]);
@@ -198,7 +234,11 @@ int main(int argc, char** argv)
         printf("Linear and darkframe...\n");
         convert_to_linear_and_subtract_darkframe(rgb, dark, 1024);
 
-        fix_pattern_noise(rgb, width, height, 0);
+        if (fixpn)
+        {
+            int fixpn_flags = fixpn_flags1 | fixpn_flags2;
+            fix_pattern_noise(rgb, width, height, fixpn_flags);
+        }
 
         printf("Output file : %s\n", out_filename);
         write_ppm(out_filename, rgb);
