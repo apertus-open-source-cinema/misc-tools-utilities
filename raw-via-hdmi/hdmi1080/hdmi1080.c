@@ -46,6 +46,7 @@ int fixpn_flags1;
 int fixpn_flags2;
 float exposure = 1;
 int filter = 0;
+int out_4k = 0;
 
 struct cmd_group options[] = {
     {
@@ -53,6 +54,7 @@ struct cmd_group options[] = {
             { &fixpn,          1,  "--fixpn",        "Fix row and column noise (SLOW, guesswork)" },
             { (void*)&exposure,1,  "--exposure=%f",  "Exposure compensation" },
             { &filter,         1,  "--filter=%d",    "Use a RGB filter (valid values: 1)" },
+            { &out_4k,         1,  "--4k",           "Experimental 4K output" },
             OPTION_EOL,
         },
     },
@@ -188,7 +190,7 @@ static void convert_to_linear_and_subtract_darkframe(uint16_t * rgb, uint16_t * 
     }
 }
 
-const int filters[3][3][3][3] = {
+const int filters_1[3][3][3][3] = {
     /* Red: */
     {
         /* from red: */
@@ -254,7 +256,273 @@ const int filters[3][3][3][3] = {
     },
 };
 
-static void rgb_filter_1(uint16_t* rgb)
+const int filters_4k[4][3][3][3][3] = {
+    /* Sub-image #1 (0,0): */
+    {
+        /* Red: */
+        {
+            /* from red: */
+            {
+                {  1074, 1365,   61 },
+                {   637, 2110,  164 },
+                {   650,  416,  549 },
+            },
+            /* from green: */
+            {
+                {  -533,  854,  343 },
+                {  -350, 3785, -709 },
+                { -1093, -312, -383 },
+            },
+            /* from blue: */
+            {
+                {  -333, -566,  -59 },
+                {   662, 1088, -104 },
+                {  -179,-1167, -429 },
+            },
+        },
+        /* Green: */
+        {
+            /* from red: */
+            {
+                {  -335,  791, -689 },
+                {  -585, 1327, -573 },
+                {   -42,   19,   29 },
+            },
+            /* from green: */
+            {
+                {   812,  745,  914 },
+                {  1275, 3546,  -61 },
+                {   412, -287,  429 },
+            },
+            /* from blue: */
+            {
+                {  -516, -249, -377 },
+                {   795, 1803,  -91 },
+                {  -409, -480, -558 },
+            },
+        },
+        /* Blue: */
+        {
+            /* from red: */
+            {
+                {  -210,  188, -432 },
+                {  -437,  501, -551 },
+                {    73, -110,   31 },
+            },
+            /* from green: */
+            {
+                {   304,  143, -310 },
+                {   815, 1858, -929 },
+                {   250, -384, -309 },
+            },
+            /* from blue: */
+            {
+                {   205,  499,  435 },
+                {  1315, 2196, 1119 },
+                {   333,  349,  646 },
+            },
+        },
+    },
+    /* Sub-image #2 (0,1): */
+    {
+        /* Red: */
+        {
+            /* from red: */
+            {
+                {   493, 1391,  775 },
+                {    35, 1880, 1088 },
+                {   386,  308,  766 },
+            },
+            /* from green: */
+            {
+                {  -626,  676,  629 },
+                {  -271, 2574,  182 },
+                {  -416, -878, -352 },
+            },
+            /* from blue: */
+            {
+                {  -259, -649, -382 },
+                {  -767, 2109,  655 },
+                {   175, -683,-1294 },
+            },
+        },
+        /* Green: */
+        {
+            /* from red: */
+            {
+                {  -681,  728, -195 },
+                {  -934, 1075,  104 },
+                {  -125, -106,  128 },
+            },
+            /* from green: */
+            {
+                {   622,  785, 1146 },
+                {  1064, 2767,  749 },
+                {   854, -634,  402 },
+            },
+            /* from blue: */
+            {
+                {  -480, -378, -621 },
+                {  -554, 2578,  800 },
+                {  -136, -161,-1154 },
+            },
+        },
+        /* Blue: */
+        {
+            /* from red: */
+            {
+                {  -374,  142, -154 },
+                {  -616,  343, -167 },
+                {    31, -185,   64 },
+            },
+            /* from green: */
+            {
+                {   150,  281, -258 },
+                {   634, 1525, -526 },
+                {   510, -475, -422 },
+            },
+            /* from blue: */
+            {
+                {   148,  395,  382 },
+                {   331, 2628, 1867 },
+                {   424,  509,  398 },
+            },
+        },
+    },
+    /* Sub-image #3 (1,0): */
+    {
+        /* Red: */
+        {
+            /* from red: */
+            {
+                {    27, -561,  489 },
+                {  1747, 5444, -786 },
+                {   515, -378,  636 },
+            },
+            /* from green: */
+            {
+                {   132,-1105,  722 },
+                { -2178, 4913, -208 },
+                {  -450,  344, -658 },
+            },
+            /* from blue: */
+            {
+                {   244,  128,  174 },
+                {    29, -814,-1273 },
+                {   228,  118,   73 },
+            },
+        },
+        /* Green: */
+        {
+            /* from red: */
+            {
+                { -1010, -857, -127 },
+                {   326, 4262,-1431 },
+                {  -380, -729,  -28 },
+            },
+            /* from green: */
+            {
+                {  1239,-1087, 1149 },
+                {  -421, 4518,  311 },
+                {  1295,  414,  294 },
+            },
+            /* from blue: */
+            {
+                {    21,  297,  -79 },
+                {   171,   35,-1163 },
+                {   -21,  788, -126 },
+            },
+        },
+        /* Blue: */
+        {
+            /* from red: */
+            {
+                {  -644, -804,  -51 },
+                {   115, 2347,-1116 },
+                {   -87, -641,  -19 },
+            },
+            /* from green: */
+            {
+                {   673, -930,   75 },
+                {  -305, 2405, -686 },
+                {   737,   55, -624 },
+            },
+            /* from blue: */
+            {
+                {   326,  716,  357 },
+                {   874, 1035,  324 },
+                {   842, 1326, 1293 },
+            },
+        },
+    },
+    /* Sub-image #4 (1,1): */
+    {
+        /* Red: */
+        {
+            /* from red: */
+            {
+                {   273,  -92,  404 },
+                {   535, 3001, 1881 },
+                {   315,  423,  428 },
+            },
+            /* from green: */
+            {
+                {     8, -584,  -40 },
+                { -1047, 3177,  822 },
+                {  -604,  372, -580 },
+            },
+            /* from blue: */
+            {
+                {   315,  155,  302 },
+                { -1053, -376,-1100 },
+                {  -156,  740,   38 },
+            },
+        },
+        /* Green: */
+        {
+            /* from red: */
+            {
+                {  -653, -513, -326 },
+                {  -553, 2051,  778 },
+                {  -380,  -66, -320 },
+            },
+            /* from green: */
+            {
+                {  1050, -437,  421 },
+                {   306, 3276, 1244 },
+                {   934,  654,  325 },
+            },
+            /* from blue: */
+            {
+                {    65,  279,   67 },
+                {  -856,  291, -812 },
+                {  -425, 1211,   45 },
+            },
+        },
+        /* Blue: */
+        {
+            /* from red: */
+            {
+                {  -363, -586, -212 },
+                {  -401,  934,  246 },
+                {   -73, -209, -241 },
+            },
+            /* from green: */
+            {
+                {   527, -427, -473 },
+                {   120, 1759, -196 },
+                {   467,  372, -712 },
+            },
+            /* from blue: */
+            {
+                {   286,  703,  530 },
+                {   102, 1139,  712 },
+                {   489, 1531, 1568 },
+            },
+        },
+    },
+};
+
 static void rgb_filter_1(uint16_t* rgb, const int filters[3][3][3][3])
 {
     int size = width * height * 3 * sizeof(int32_t);
@@ -272,9 +540,9 @@ static void rgb_filter_1(uint16_t* rgb, const int filters[3][3][3][3])
                 for (int p = 0; p < 3; p++)
                 {
                     aux[x*3+c + y*width*3] +=
-                        filters[c][p][0][0] * rgb[(x-1)*3+c + (y-1)*width*3] + filters[c][p][0][1] * rgb[x*3+c + (y-1)*width*3] + filters[c][p][0][2] * rgb[(x+1)*3+c + (y-1)*width*3] +
-                        filters[c][p][1][0] * rgb[(x-1)*3+c + (y+0)*width*3] + filters[c][p][1][1] * rgb[x*3+c + (y+0)*width*3] + filters[c][p][1][2] * rgb[(x+1)*3+c + (y+0)*width*3] +
-                        filters[c][p][2][0] * rgb[(x-1)*3+c + (y+1)*width*3] + filters[c][p][2][1] * rgb[x*3+c + (y+1)*width*3] + filters[c][p][2][2] * rgb[(x+1)*3+c + (y+1)*width*3];
+                        filters[c][p][0][0] * rgb[(x-1)*3+p + (y-1)*width*3] + filters[c][p][0][1] * rgb[x*3+p + (y-1)*width*3] + filters[c][p][0][2] * rgb[(x+1)*3+p + (y-1)*width*3] +
+                        filters[c][p][1][0] * rgb[(x-1)*3+p + (y+0)*width*3] + filters[c][p][1][1] * rgb[x*3+p + (y+0)*width*3] + filters[c][p][1][2] * rgb[(x+1)*3+p + (y+0)*width*3] +
+                        filters[c][p][2][0] * rgb[(x-1)*3+p + (y+1)*width*3] + filters[c][p][2][1] * rgb[x*3+p + (y+1)*width*3] + filters[c][p][2][2] * rgb[(x+1)*3+p + (y+1)*width*3];
                 }
             }
         }
@@ -286,6 +554,50 @@ static void rgb_filter_1(uint16_t* rgb, const int filters[3][3][3][3])
     }
     
     free(aux);
+}
+
+static void copy_subimage(uint16_t* rgbx2, uint16_t* rgb, int dx, int dy)
+{
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            for (int ch = 0; ch < 3; ch++)
+            {
+                rgbx2[(2*x+dx)*3+ch + (2*y+dy)*2*width*3] = rgb[x*3+ch + y*width*3];
+            }
+        }
+    }
+}
+static void rgb_filter_x2()
+{
+    int size = width * height * 3 * sizeof(uint16_t);
+    uint16_t* rgbf = malloc(size);
+    uint16_t* rgbx2 = malloc(size * 4);
+    
+    memcpy(rgbf, rgb, size);
+    rgb_filter_1(rgbf, filters_4k[0]);
+    copy_subimage(rgbx2, rgbf, 0, 0);
+    
+    memcpy(rgbf, rgb, size);
+    rgb_filter_1(rgbf, filters_4k[1]);
+    copy_subimage(rgbx2, rgbf, 1, 0);
+
+    memcpy(rgbf, rgb, size);
+    rgb_filter_1(rgbf, filters_4k[2]);
+    copy_subimage(rgbx2, rgbf, 0, 1);
+
+    memcpy(rgbf, rgb, size);
+    rgb_filter_1(rgbf, filters_4k[3]);
+    copy_subimage(rgbx2, rgbf, 1, 1);
+    
+    /* replace output buffer with a double-res one */
+    free(rgb);
+    rgb = rgbx2;
+    width *= 2;
+    height *= 2;
+    
+    free(rgbf);
 }
 
 int main(int argc, char** argv)
@@ -346,6 +658,12 @@ int main(int argc, char** argv)
         {
             printf("Filtering image...\n");
             rgb_filter_1(rgb, filters_1);
+        }
+        
+        if (out_4k)
+        {
+            printf("Filtering 4K...\n");
+            rgb_filter_x2();
         }
 
         printf("Output file : %s\n", out_filename);
