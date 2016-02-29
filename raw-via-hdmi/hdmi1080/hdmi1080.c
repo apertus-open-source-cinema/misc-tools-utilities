@@ -29,7 +29,7 @@
 #include "sys/stat.h"
 #include "math.h"
 //#include "cmdoptions.h"
-//#include "patternnoise.h"
+#include "patternnoise.h"
 //#include "wirth.h"
 
 /* image data */
@@ -197,6 +197,8 @@ int main(int argc, char** argv)
         
         printf("Linear and darkframe...\n");
         convert_to_linear_and_subtract_darkframe(rgb, dark, 1024);
+
+        fix_pattern_noise(rgb, width, height, 0);
 
         printf("Output file : %s\n", out_filename);
         write_ppm(out_filename, rgb);

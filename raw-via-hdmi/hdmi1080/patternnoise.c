@@ -50,23 +50,18 @@ static void subtract(int16_t * a, int16_t * b, int16_t * out, int w, int h)
     }
 }
 
-/* out = (a + b) / 2 */
-static void average(int16_t * a, int16_t * b, int16_t * out, int w, int h)
-{
-    for (int i = 0; i < w*h; i++)
-    {
-        out[i] = ((int)a[i] + (int)b[i]) / 2;
-    }
-}
-
+/* operate on RGB PPM data */
 /* w and h are the size of input buffer; the output buffer will have the dimensions swapped */
-static void transpose(int16_t * in, int16_t * out, int w, int h)
+static void transpose(uint16_t * in, uint16_t * out, int w, int h)
 {
     for (int y = 0; y < h; y++)
     {
         for (int x = 0; x < w; x++)
         {
-            out[y + x*h] = in[x + y*w];
+            for (int ch = 0; ch < 3; ch++)
+            {
+                out[3*y+ch + x*h*3] = in[3*x+ch + y*w*3];
+            }
         }
     }
 }
@@ -81,39 +76,35 @@ static void horizontal_gradient(int16_t * in, int16_t * out, int w, int h)
     out[0] = out[1] = out[w*h-1] = out[w*h-2] = 0;
 }
 
-static void horizontal_edge_aware_blur_rggb(
-    int16_t * in_r,  int16_t * in_g1,  int16_t * in_g2,  int16_t * in_b,
-    int16_t * out_r, int16_t * out_g1, int16_t * out_g2, int16_t * out_b,
-    int w, int h, int edge_thr, int strength_lo, int strength_hi, int strength_thr)
+static void horizontal_edge_aware_blur_rgb(
+    int16_t * in_r,  int16_t * in_g,  int16_t * in_b,
+    int16_t * out_r, int16_t * out_g, int16_t * out_b,
+    int w, int h, int edge_thr, int strength)
 {
     const int NMAX = 256;
-    int g1[NMAX];
-    int g2[NMAX];
+    int g[NMAX];
     int rg[NMAX];
     int bg[NMAX];
-    if (MAX(strength_lo, strength_hi) > NMAX)
+    if (strength > NMAX)
     {
         printf("FIXME: blur too strong\n");
         return;
     }
+    
+    strength /= 2;
 
-    /* precompute average green, red-green and blue-green */
-    int16_t * avg_g  = malloc(w * h * sizeof(avg_g[0]));
+    /* precompute red-green and blue-green */
     int16_t * dif_rg = malloc(w * h * sizeof(dif_rg[0]));
     int16_t * dif_bg = malloc(w * h * sizeof(dif_bg[0]));
-    average(in_g1, in_g2, avg_g, w, h);
-    subtract(in_r, avg_g, dif_rg, w, h);
-    subtract(in_b, avg_g, dif_bg, w, h);
+    subtract(in_r, in_g, dif_rg, w, h);
+    subtract(in_b, in_g, dif_bg, w, h);
 
     for (int y = 0; y < h; y++)
     {
         for (int x = 0; x < w; x++)
         {
-            int p0 = avg_g[x + y*w];
+            int p0 = in_g[x + y*w];
             int num = 0;
-            
-            /* use different filter strength for highlights vs rest of the picture */
-            int strength = (p0 < strength_thr) ? strength_lo/2 : strength_hi/2;
 
             /* range of pixels similar to p0 */
             /* it will contain at least 1 pixel, and at most from 2*strength + 1 pixels */
@@ -123,7 +114,7 @@ static void horizontal_edge_aware_blur_rggb(
             /* go to the right, until crossing the threshold */
             while (xr < MIN(x + strength, w))
             {
-                int p = avg_g[xr + y*w];
+                int p = in_g[xr + y*w];
                 if (abs(p - p0) > edge_thr)
                     break;
                 xr++;
@@ -132,7 +123,7 @@ static void horizontal_edge_aware_blur_rggb(
             /* same, to the left */
             while (xl >= MAX(x - strength, 0))
             {
-                int p = avg_g[xl + y*w];
+                int p = in_g[xl + y*w];
                 if (abs(p - p0) > edge_thr)
                     break;
                 xl--;
@@ -141,24 +132,20 @@ static void horizontal_edge_aware_blur_rggb(
             /* now take the medians from this interval */
             for (int xx = xl+1; xx < xr; xx++)
             {
-                g1[num] = in_g1[xx + y*w];
-                g2[num] = in_g2[xx + y*w];
+                g[num]  = in_g[xx + y*w];
                 rg[num] = dif_rg[xx + y*w];
                 bg[num] = dif_bg[xx + y*w];
                 num++;
             }
             
-            int mg1 = median_int_wirth(g1, num);
-            int mg2 = median_int_wirth(g2, num);
-            int mg = (mg1 + mg2) / 2;
-            out_g1[x + y*w] = mg1;
-            out_g2[x + y*w] = mg2;
-            out_r [x + y*w] = median_int_wirth(rg, num) + mg;
-            out_b [x + y*w] = median_int_wirth(bg, num) + mg;
+            //~ printf("%d ", num);
+            int mg = median_int_wirth(g, num);
+            out_g[x + y*w] = mg;
+            out_r[x + y*w] = median_int_wirth(rg, num) + mg;
+            out_b[x + y*w] = median_int_wirth(bg, num) + mg;
         }
     }
     
-    free(avg_g);
     free(dif_rg);
     free(dif_bg);
 }
@@ -166,7 +153,7 @@ static void horizontal_edge_aware_blur_rggb(
 /* Find and apply a scalar offset to each column, to reduce pattern noise */
 /* original: input and output */
 /* denoised: input only */
-static void fix_column_noise(int16_t * original, int16_t * denoised, int w, int h, int clip_thr, int nonlinear_highlights)
+static void fix_column_noise(int16_t * original, int16_t * denoised, int w, int h)
 {
     /* let's say the difference between original and denoised is mostly noise */
     int16_t * noise = malloc(w * h * sizeof(noise[0]));
@@ -191,11 +178,9 @@ static void fix_column_noise(int16_t * original, int16_t * denoised, int w, int 
             int pixel = original[x + y*w];
             int hgradient = abs(hgrad[x + y*w]);
 
-            mask[x + y*w] = 
-                (hgradient > 200) ||   /* mask out pixels on a strong edge, that is clearly not pattern noise */
-                (nonlinear_highlights ? /* row noise is very different in nonlinear (nearly clipped) highlights, compared to the rest of the image */
-                       pixel <= clip_thr : /* NL highlights: mask out normally-exposed areas */ 
-                       pixel > clip_thr ); /* regular image: mask out nearly-overexposed pixels */
+            mask[x + y*w] =
+                (hgradient > 2000) || /* mask out pixels on a strong edge, that is clearly not pattern noise */
+                (pixel > 20000) ;     /* mask out very bright pixels */
         }
     }
 
@@ -220,7 +205,7 @@ static void fix_column_noise(int16_t * original, int16_t * denoised, int w, int 
     {
         /* debug: show the mask */
         for (int i = 0; i < w*h; i++)
-            original[i] = mask[i] * 1000;
+            original[i] = mask[i] * 10000;
         goto end;
     }
 
@@ -253,11 +238,7 @@ static void fix_column_noise(int16_t * original, int16_t * denoised, int w, int 
     {
         for (int x = 0; x < w; x++)
         {
-            int pixel = original[x + y*w];
-            if (nonlinear_highlights ? pixel > clip_thr : pixel <= clip_thr)
-            {
-                original[x + y*w] = COERCE((int)original[x + y*w] + col_offsets[x] - mc, -32767, 32760);
-            }
+            original[x + y*w] = COERCE((int)original[x + y*w] + col_offsets[x] - mc, 0, 32760);
         }
     }
 
@@ -269,58 +250,49 @@ end:
     free(hgrad);
 }
 
-/* extract a color channel from a Bayer image */
-/* w and h are the size of the input buffer; output will be half-res */
-/* dx and dy can be 0 or 1 */
-static void extract_channel(int16_t * in, int16_t * out, int w, int h, int dx, int dy)
+/* extract a color channel from a RGB image (PPM order) */
+/* in is w x h x 3, out is w x h signed, ch is 0..2 */
+static void extract_channel(uint16_t * in, int16_t * out, int w, int h, int ch)
 {
-    for (int y = dy; y < h; y += 2)
+    for (int y = 0; y < h; y++)
     {
-        for (int x = dx; x < w; x += 2)
+        for (int x = 0; x < w; x++)
         {
-            out[(x/2) + (y/2)*(w/2)] = in[x + y*w];
+            out[x + y*w] = in[x*3+ch + y*w*3] / 2;
         }
     }
 }
 
-/* set a color channel into a Bayer image */
-/* w and h are the size of the output buffer (full-size image); input will be half-res */
-/* dx and dy can be 0 or 1 */
-static void set_channel(int16_t * out, int16_t * in, int w, int h, int dx, int dy)
+/* set a color channel into a RGB image (PPM order) */
+/* out is w x h x 3, in is w x h signed, ch is 0..2 */
+static void set_channel(uint16_t * out, int16_t * in, int w, int h, int ch)
 {
-    for (int y = dy; y < h; y += 2)
+    for (int y = 0; y < h; y++)
     {
-        for (int x = dx; x < w; x += 2)
+        for (int x = 0; x < w; x++)
         {
-            out[x + y*w] = in[(x/2) + (y/2)*(w/2)];
+            out[x*3+ch + y*w*3] = in[x + y*w] * 2;
         }
     }
 }
 
-static void fix_column_noise_rggb(int16_t * raw, int w, int h, int white)
+static void fix_column_noise_rgb(uint16_t * rgb, int w, int h)
 {
-    /* assume Bayer order [GB;RG] */
-    int16_t * r        = malloc(w/2 * h/2 * sizeof(r[0]));   /* red channel (bottom left) */
-    int16_t * g1       = malloc(w/2 * h/2 * sizeof(r[0]));   /* top-left green */
-    int16_t * g2       = malloc(w/2 * h/2 * sizeof(r[0]));   /* bottom-right green */
-    int16_t * b        = malloc(w/2 * h/2 * sizeof(r[0]));   /* blue channel (top right) */
-    int16_t * rs       = malloc(w/2 * h/2 * sizeof(r[0]));   /* r  after smoothing */
-    int16_t * g1s      = malloc(w/2 * h/2 * sizeof(r[0]));   /* g1 after smoothing */
-    int16_t * g2s      = malloc(w/2 * h/2 * sizeof(r[0]));   /* g2 after smoothing */
-    int16_t * bs       = malloc(w/2 * h/2 * sizeof(r[0]));   /* b  after smoothing */
+    int16_t * r  = malloc(w * h * sizeof(r[0]));
+    int16_t * g  = malloc(w * h * sizeof(r[0]));
+    int16_t * b  = malloc(w * h * sizeof(r[0]));
+    int16_t * rs = malloc(w * h * sizeof(r[0]));   /* r  after smoothing */
+    int16_t * gs = malloc(w * h * sizeof(r[0]));   /* g after smoothing */
+    int16_t * bs = malloc(w * h * sizeof(r[0]));   /* b  after smoothing */
     
-    /* extract half-res color channels from Bayer data */
-    extract_channel(raw, r,  w, h, 0, 1);
-    extract_channel(raw, g1, w, h, 0, 0);
-    extract_channel(raw, g2, w, h, 1, 1);
-    extract_channel(raw, b,  w, h, 1, 0);
-
-    /* fixme: hardcoded for gain=1 */
-    int clip_thr = 2500*8;
+    /* extract color channels from RGB data */
+    extract_channel(rgb, r, w, h, 0);
+    extract_channel(rgb, g, w, h, 1);
+    extract_channel(rgb, b, w, h, 2);
     
     /* strong horizontal denoising (1-D median blur on G, R-G and B-G, stop on edge */
     /* (this step takes a lot of time) */
-    horizontal_edge_aware_blur_rggb(r, g1, g2, b, rs, g1s, g2s, bs, w/2, h/2, 200, 50, 250, clip_thr);
+    horizontal_edge_aware_blur_rgb(r, g, b, rs, gs, bs, w, h, 5000, 50);
     printf("."); fflush(stdout);
 
     /* after blurring horizontally, the difference reveals vertical FPN */
@@ -328,71 +300,51 @@ static void fix_column_noise_rggb(int16_t * raw, int w, int h, int white)
     /* fix for both highlights and normally-exposed images */
     /* (could be probably optimized for speed a bit) */
     
-    /* disable highlight processing when showing debug information */
-    int hl_en = !g_debug_flags;
-    for (int hl = 0; hl <= hl_en; hl++)
-    {
-        fix_column_noise(r,  rs,  w/2, h/2, clip_thr, hl);
-        fix_column_noise(g1, g1s, w/2, h/2, clip_thr, hl);
-        fix_column_noise(g2, g2s, w/2, h/2, clip_thr, hl);
-        fix_column_noise(b,  bs,  w/2, h/2, clip_thr, hl);
-    }
+    fix_column_noise(r, rs, w, h);
+    fix_column_noise(g, gs, w, h);
+    fix_column_noise(b, bs, w, h);
     printf("."); fflush(stdout);
 
     /* commit changes */
-    set_channel(raw, r,  w, h, 0, 1);
-    set_channel(raw, g1, w, h, 0, 0);
-    set_channel(raw, g2, w, h, 1, 1);
-    set_channel(raw, b,  w, h, 1, 0);
+    set_channel(rgb, r, w, h, 0);
+    set_channel(rgb, g, w, h, 1);
+    set_channel(rgb, b, w, h, 2);
 
     /* cleanup */
     free(r);
-    free(g1);
-    free(g2);
+    free(g);
     free(b);
     free(rs);
-    free(g1s);
-    free(g2s);
+    free(gs);
     free(bs);
 }
 
-void fix_pattern_noise(struct raw_info * raw_info, int16_t * raw, int row_noise_only, int debug_flags)
+void fix_pattern_noise(uint16_t * rgb, int width, int height, int debug_flags)
 {
-    printf("Fixing %s noise", row_noise_only ? "row" : "pattern");
+    printf("Fixing pattern noise");
     fflush(stdout);
-
-    /* assume Bayer order [GB;RG] */
-    if (raw_info->cfa_pattern != 0x01000201)
-    {
-        printf("Bayer order error\n");
-        return;
-    }
     
     g_debug_flags = debug_flags;
     
-    int w = raw_info->width;
-    int h = raw_info->height;
-
-    /* in raw16, data is multiplied by 8 */
-    /* we need the white level to ignore overexposed areas when looking for pattern noise */
-    int white = raw_info->white_level * 8;
+    int w = width;
+    int h = height;
     
     /* fix vertical noise, then transpose and repeat for the horizontal one */
     /* not very efficient, but at least avoids duplicate code */
     /* note: when debugging, we process only one direction */
-    if (!row_noise_only && (!g_debug_flags || (g_debug_flags & FIXPN_DBG_COLNOISE)))
+    if (!g_debug_flags || (g_debug_flags & FIXPN_DBG_COLNOISE))
     {
-        fix_column_noise_rggb(raw, w, h, white);
+        fix_column_noise_rgb(rgb, w, h);
     }
     
-    if (row_noise_only || !g_debug_flags || !(g_debug_flags & FIXPN_DBG_COLNOISE))
+    if (!g_debug_flags || !(g_debug_flags & FIXPN_DBG_COLNOISE))
     {
         /* transpose, process just like before, then transpose back */
-        int16_t * raw_t = malloc(w * h * sizeof(raw[0]));
-        transpose(raw, raw_t, w, h);
-        fix_column_noise_rggb(raw_t, h, w, white);
-        transpose(raw_t, raw, h, w);
-        free(raw_t);
+        uint16_t * rgb_t = malloc(w * h * 3 * sizeof(rgb[0]));
+        transpose(rgb, rgb_t, w, h);
+        fix_column_noise_rgb(rgb_t, h, w);
+        transpose(rgb_t, rgb, h, w);
+        free(rgb_t);
     }
     
     printf("\n");
