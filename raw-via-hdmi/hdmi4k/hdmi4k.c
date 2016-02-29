@@ -1,5 +1,5 @@
 /*
- * HDMI 1080p converter for Axiom BETA footage.
+ * HDMI 4K converter for Axiom BETA footage.
  * 
  * Copyright (C) 2013 a1ex
  * 
@@ -46,7 +46,7 @@ int fixpn_flags1;
 int fixpn_flags2;
 float exposure = 0;
 int filter = 0;
-int out_4k = 0;
+int out_4k = 1;
 
 struct cmd_group options[] = {
     {
