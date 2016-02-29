@@ -45,12 +45,14 @@ int fixpn = 0;
 int fixpn_flags1;
 int fixpn_flags2;
 float exposure = 1;
+int filter = 0;
 
 struct cmd_group options[] = {
     {
         "Processing options", (struct cmd_option[]) {
             { &fixpn,          1,  "--fixpn",        "Fix row and column noise (SLOW, guesswork)" },
             { (void*)&exposure,1,  "--exposure=%f",  "Exposure compensation" },
+            { &filter,         1,  "--filter=%d",    "Use a RGB filter (valid values: 1)" },
             OPTION_EOL,
         },
     },
@@ -186,6 +188,106 @@ static void convert_to_linear_and_subtract_darkframe(uint16_t * rgb, uint16_t * 
     }
 }
 
+const int filters[3][3][3][3] = {
+    /* Red: */
+    {
+        /* from red: */
+        {
+            {   464,  900,  426 },
+            {   620, 2889,  735 },
+            {   388,  171,  540 },
+        },
+        /* from green: */
+        {
+            {  -491,  158,  386 },
+            {  -678, 2979,  320 },
+            {  -528,  -57, -577 },
+        },
+        /* from blue: */
+        {
+            {     3, -458, -115 },
+            {  -182,  548, -556 },
+            {    97,   53, -484 },
+        },
+    },
+    /* Green: */
+    {
+        /* from red: */
+        {
+            {  -673,  364, -338 },
+            {  -543, 1981, -149 },
+            {  -299, -242,  -95 },
+        },
+        /* from green: */
+        {
+            {   726,  178,  879 },
+            {   809, 2973,  822 },
+            {   973,   94,  287 },
+        },
+        /* from blue: */
+        {
+            {  -222, -211, -360 },
+            {   -24, 1219, -403 },
+            {  -180,  608, -520 },
+        },
+    },
+    /* Blue: */
+    {
+        /* from red: */
+        {
+            {  -399,  -56, -214 },
+            {  -402,  904, -312 },
+            {   -58, -300,  -71 },
+        },
+        /* from green: */
+        {
+            {   283, -120, -257 },
+            {   478, 1530, -419 },
+            {   556,  -73, -567 },
+        },
+        /* from blue: */
+        {
+            {   242,  452,  355 },
+            {   711, 1779,  952 },
+            {   565, 1104,  931 },
+        },
+    },
+};
+
+static void rgb_filter_1(uint16_t* rgb)
+static void rgb_filter_1(uint16_t* rgb, const int filters[3][3][3][3])
+{
+    int size = width * height * 3 * sizeof(int32_t);
+    int32_t * aux = malloc(size);
+    memset(aux, 0, size);
+    
+    for (int y = 1; y < height-1; y++)
+    {
+        for (int x = 1; x < width-1; x++)
+        {
+            /* compute channel c */
+            for (int c = 0; c < 3; c++)
+            {
+                /* from predictor channel p */
+                for (int p = 0; p < 3; p++)
+                {
+                    aux[x*3+c + y*width*3] +=
+                        filters[c][p][0][0] * rgb[(x-1)*3+c + (y-1)*width*3] + filters[c][p][0][1] * rgb[x*3+c + (y-1)*width*3] + filters[c][p][0][2] * rgb[(x+1)*3+c + (y-1)*width*3] +
+                        filters[c][p][1][0] * rgb[(x-1)*3+c + (y+0)*width*3] + filters[c][p][1][1] * rgb[x*3+c + (y+0)*width*3] + filters[c][p][1][2] * rgb[(x+1)*3+c + (y+0)*width*3] +
+                        filters[c][p][2][0] * rgb[(x-1)*3+c + (y+1)*width*3] + filters[c][p][2][1] * rgb[x*3+c + (y+1)*width*3] + filters[c][p][2][2] * rgb[(x+1)*3+c + (y+1)*width*3];
+                }
+            }
+        }
+    }
+
+    for (int i = 0; i < width * height * 3; i++)
+    {
+        rgb[i] = COERCE(aux[i] / 8192, 0, 65535);
+    }
+    
+    free(aux);
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 1)
@@ -238,6 +340,12 @@ int main(int argc, char** argv)
         {
             int fixpn_flags = fixpn_flags1 | fixpn_flags2;
             fix_pattern_noise(rgb, width, height, fixpn_flags);
+        }
+        
+        if (filter == 1)
+        {
+            printf("Filtering image...\n");
+            rgb_filter_1(rgb, filters_1);
         }
 
         printf("Output file : %s\n", out_filename);
