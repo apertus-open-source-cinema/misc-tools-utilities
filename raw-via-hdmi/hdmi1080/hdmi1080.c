@@ -44,7 +44,7 @@ uint16_t* dark;
 int fixpn = 0;
 int fixpn_flags1;
 int fixpn_flags2;
-float exposure = 1;
+float exposure = 0;
 int filter = 0;
 int out_4k = 0;
 
@@ -52,7 +52,7 @@ struct cmd_group options[] = {
     {
         "Processing options", (struct cmd_option[]) {
             { &fixpn,          1,  "--fixpn",        "Fix row and column noise (SLOW, guesswork)" },
-            { (void*)&exposure,1,  "--exposure=%f",  "Exposure compensation" },
+            { (void*)&exposure,1,  "--exposure=%f",  "Exposure compensation (EV)" },
             { &filter,         1,  "--filter=%d",    "Use a RGB filter (valid values: 1)" },
             { &out_4k,         1,  "--4k",           "Experimental 4K output" },
             OPTION_EOL,
@@ -178,12 +178,13 @@ static void write_ppm(char* filename, uint16_t * rgb)
 
 static void convert_to_linear_and_subtract_darkframe(uint16_t * rgb, uint16_t * dark, int offset)
 {
+    /* test footage was recorded with gamma 0.5 */
+    /* dark frame median is about 10000 */
+    /* clipping point is about 50000 */
+    double gain = (65535 - offset) / 40000.0 * powf(2, exposure);
+
     for (int i = 0; i < width*height*3; i++)
     {
-        /* test footage was recorded with gamma 0.5 */
-        /* dark frame median is about 10000 */
-        /* clipping point is about 50000 */
-        double gain = (65535 - offset) / 40000.0 * exposure;
         double rgb2 = rgb[i] / 65535.0; rgb2 *= rgb2;
         double dark2 = dark[i] / 65535.0; dark2 *= dark2;
         rgb[i] = COERCE((rgb2 - dark2) * 65535 * gain + offset, 0, 65535);
