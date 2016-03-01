@@ -55,8 +55,8 @@ struct cmd_group options[] = {
         "Processing options", (struct cmd_option[]) {
             { &fixpn,          1,  "--fixpn",        "Fix row and column noise (SLOW, guesswork)" },
             { (void*)&exposure,1,  "--exposure=%f",  "Exposure compensation (EV)" },
-            { &filter,         1,  "--filter=%d",    "Use a RGB filter (valid values: 1)" },
-            { &out_4k,         1,  "--4k",           "Experimental 4K output" },
+            { &out_4k,         0,  "--1080p",        "1080p output (disable 4k)" },
+            { &filter,         1,  "--filter=%d",    "Use a RGB filter (valid values: 1). 1080p only." },
             OPTION_EOL,
         },
     },
