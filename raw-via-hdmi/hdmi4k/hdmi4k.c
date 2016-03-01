@@ -825,6 +825,11 @@ int main(int argc, char** argv)
         printf("  ffmpeg -i input.mov frames%%05d.ppm && %s *.ppm\n", argv[0]);
         printf("  %s input.mov output.mov [todo]\n", argv[0]);
         printf("\n");
+        printf("Calibration files:\n");
+        printf("  hdmi-darkframe.ppm: averaged dark frames from the HDMI recorder\n");
+        printf("  lut-hdmi.spi1d    : linearization LUT (created with calib_argyll.sh)\n");
+        printf("\n");
+        printf("Note: when using LUT, a (hardcoded) color matrix is also applied.");
         show_commandline_help(argv[0]);
         return 0;
     }
@@ -858,6 +863,7 @@ int main(int argc, char** argv)
         printf("LUT file    : %s ", lut_filename);
         read_lut(lut_filename);
         use_lut = 1;
+        printf("Color matrix: on");
         use_matrix = 1;
     }
     
