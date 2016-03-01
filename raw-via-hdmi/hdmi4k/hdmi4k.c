@@ -49,6 +49,7 @@ int filter = 0;
 int out_4k = 1;
 int use_lut = 0;
 int use_matrix = 0;
+float gamma_c = 1;
 
 struct cmd_group options[] = {
     {
@@ -57,6 +58,7 @@ struct cmd_group options[] = {
             { (void*)&exposure,1,  "--exposure=%f",  "Exposure compensation (EV)" },
             { &out_4k,         0,  "--1080p",        "1080p output (disable 4k)" },
             { &filter,         1,  "--filter=%d",    "Use a RGB filter (valid values: 1). 1080p only." },
+            { (void*)&gamma_c, 1,  "--gamma=%f",     "Gamma correction for output (just for tests)" },
             OPTION_EOL,
         },
     },
@@ -681,6 +683,32 @@ static void apply_matrix()
     }
 }
 
+/* Apply a gamma_c curve to red, green and blue image buffers,
+ * and round the values to integers between 0 and max.
+ * 
+ * This step also adds anti-posterization noise before rounding.
+ */
+static void apply_gamma()
+{
+    printf("Gamma...\n");
+
+    int w = width;
+    int h = height;
+    double gm = 1/gamma_c;
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            double r = rgb[3*x   + y*w*3] / 65535.0;
+            double g = rgb[3*x+1 + y*w*3] / 65535.0;
+            double b = rgb[3*x+2 + y*w*3] / 65535.0;
+            rgb[3*x   + y*w*3] = COERCE(pow(r,gm) * 65535, 0, 65535);
+            rgb[3*x+1 + y*w*3] = COERCE(pow(g,gm) * 65535, 0, 65535);
+            rgb[3*x+2 + y*w*3] = COERCE(pow(b,gm) * 65535, 0, 65535);
+        }
+    }
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 1)
@@ -767,6 +795,11 @@ int main(int argc, char** argv)
         {
             printf("Applying matrix...\n");
             apply_matrix();
+        }
+        
+        if (gamma_c != 1)
+        {
+            apply_gamma();
         }
 
         printf("Output file : %s\n", out_filename);
