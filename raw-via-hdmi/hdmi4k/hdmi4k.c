@@ -738,7 +738,7 @@ int main(int argc, char** argv)
     printf("Dark frame  : darkframe-hdmi.ppm...\n");
     read_ppm("darkframe-hdmi.ppm", &dark);
 
-    char* lut_filename = "lut.spi1d";
+    char* lut_filename = "lut-hdmi.spi1d";
     if (file_exists_warn(lut_filename))
     {
         /* no newline here (read_lut will print more info) */
