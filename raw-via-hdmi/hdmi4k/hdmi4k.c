@@ -39,7 +39,7 @@ int width;
 int height;
 
 /* dark frame */
-uint16_t* dark;
+uint16_t* dark = 0;
 
 /* options */
 int fixpn = 0;
@@ -48,6 +48,7 @@ int fixpn_flags2;
 float exposure = 0;
 int filter = 0;
 int out_4k = 1;
+int use_darkframe = 0;
 int use_lut = 0;
 int use_matrix = 0;
 float in_gamma = 0.5;
@@ -200,7 +201,7 @@ static void convert_to_linear_and_subtract_darkframe(uint16_t * rgb, uint16_t * 
     for (int i = 0; i < width*height*3; i++)
     {
         double data = rgb[i] / 65535.0;
-        double dark = darkframe[i] / 65535.0;
+        double dark = darkframe ? darkframe[i] / 65535.0 : 0;
         if (in_gamma == 0.5)
         {
             data *= data;
@@ -747,8 +748,13 @@ int main(int argc, char** argv)
 
     printf("\n");
     
-    printf("Dark frame  : darkframe-hdmi.ppm...\n");
-    read_ppm("darkframe-hdmi.ppm", &dark);
+    char* dark_filename = "darkframe-hdmi.ppm";
+    if (file_exists_warn(dark_filename))
+    {
+        printf("Dark frame  : %s...\n", dark_filename);
+        read_ppm(dark_filename, &dark);
+        use_darkframe = 1;
+    }
 
     char* lut_filename = "lut-hdmi.spi1d";
     if (file_exists_warn(lut_filename))
