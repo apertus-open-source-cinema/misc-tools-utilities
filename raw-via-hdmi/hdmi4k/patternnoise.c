@@ -38,6 +38,10 @@ static int g_debug_flags;
        typeof ((a)+(b)) _b = (b); \
      _a > _b ? _a : _b; })
 
+#define ABS(a) \
+   ({ __typeof__ (a) _a = (a); \
+     _a > 0 ? _a : -_a; })
+
 #define COERCE(x,lo,hi) MAX(MIN((x),(hi)),(lo))
 #define COUNT(x)        ((int)(sizeof(x)/sizeof((x)[0])))
 
@@ -153,7 +157,7 @@ static void horizontal_edge_aware_blur_rgb(
 /* Find and apply a scalar offset to each column, to reduce pattern noise */
 /* original: input and output */
 /* denoised: input only */
-static void fix_column_noise(int16_t * original, int16_t * denoised, int w, int h)
+void fix_column_noise(int16_t * original, int16_t * denoised, int w, int h)
 {
     /* let's say the difference between original and denoised is mostly noise */
     int16_t * noise = malloc(w * h * sizeof(noise[0]));
@@ -176,11 +180,13 @@ static void fix_column_noise(int16_t * original, int16_t * denoised, int w, int 
         for (int x = 0; x < w; x++)
         {
             int pixel = original[x + y*w];
-            int hgradient = abs(hgrad[x + y*w]);
+            int hgradient = ABS(hgrad[x + y*w]);
+            int noise_val = noise[x + y*w];
 
             mask[x + y*w] =
-                (hgradient > 2000) || /* mask out pixels on a strong edge, that is clearly not pattern noise */
-                (pixel > 20000) ;     /* mask out very bright pixels */
+                (hgradient > 2000) ||       /* mask out pixels on a strong edge, that is clearly not pattern noise */
+                (pixel > 20000) ||          /* mask out very bright pixels */
+                (ABS(noise_val) > 1000);    /* mask out values that are clearly not noise */
         }
     }
 
@@ -252,7 +258,7 @@ end:
 
 /* extract a color channel from a RGB image (PPM order) */
 /* in is w x h x 3, out is w x h signed, ch is 0..2 */
-static void extract_channel(uint16_t * in, int16_t * out, int w, int h, int ch)
+void extract_channel(uint16_t * in, int16_t * out, int w, int h, int ch)
 {
     for (int y = 0; y < h; y++)
     {
@@ -276,29 +282,36 @@ static void set_channel(uint16_t * out, int16_t * in, int w, int h, int ch)
     }
 }
 
-static void fix_column_noise_rgb(uint16_t * rgb, int w, int h)
+/* denoised is optional */
+static void fix_column_noise_rgb(uint16_t * rgb, uint16_t * denoised, int w, int h)
 {
     int16_t * r  = malloc(w * h * sizeof(r[0]));
     int16_t * g  = malloc(w * h * sizeof(r[0]));
     int16_t * b  = malloc(w * h * sizeof(r[0]));
-    int16_t * rs = malloc(w * h * sizeof(r[0]));   /* r  after smoothing */
+    int16_t * rs = malloc(w * h * sizeof(r[0]));   /* r after smoothing */
     int16_t * gs = malloc(w * h * sizeof(r[0]));   /* g after smoothing */
-    int16_t * bs = malloc(w * h * sizeof(r[0]));   /* b  after smoothing */
+    int16_t * bs = malloc(w * h * sizeof(r[0]));   /* b after smoothing */
     
     /* extract color channels from RGB data */
     extract_channel(rgb, r, w, h, 0);
     extract_channel(rgb, g, w, h, 1);
     extract_channel(rgb, b, w, h, 2);
     
-    /* strong horizontal denoising (1-D median blur on G, R-G and B-G, stop on edge */
-    /* (this step takes a lot of time) */
-    horizontal_edge_aware_blur_rgb(r, g, b, rs, gs, bs, w, h, 5000, 50);
-    printf("."); fflush(stdout);
+    if (denoised)
+    {
+        extract_channel(denoised, rs, w, h, 0);
+        extract_channel(denoised, gs, w, h, 1);
+        extract_channel(denoised, bs, w, h, 2);
+    }
+    else
+    {
+        /* strong horizontal denoising (1-D median blur on G, R-G and B-G, stop on edge */
+        /* (this step takes a lot of time) */
+        horizontal_edge_aware_blur_rgb(r, g, b, rs, gs, bs, w, h, 5000, 50);
+        printf("."); fflush(stdout);
+    }
 
     /* after blurring horizontally, the difference reveals vertical FPN */
-
-    /* fix for both highlights and normally-exposed images */
-    /* (could be probably optimized for speed a bit) */
     
     fix_column_noise(r, rs, w, h);
     fix_column_noise(g, gs, w, h);
@@ -319,9 +332,9 @@ static void fix_column_noise_rgb(uint16_t * rgb, int w, int h)
     free(bs);
 }
 
-void fix_pattern_noise(uint16_t * rgb, int width, int height, int debug_flags)
+void fix_pattern_noise_ex(uint16_t * rgb, uint16_t * denoised, int width, int height, int row_noise_only, int debug_flags)
 {
-    printf("Fixing pattern noise");
+    printf("Fixing %s noise", row_noise_only ? "row" : "pattern");
     fflush(stdout);
     
     g_debug_flags = debug_flags;
@@ -332,20 +345,30 @@ void fix_pattern_noise(uint16_t * rgb, int width, int height, int debug_flags)
     /* fix vertical noise, then transpose and repeat for the horizontal one */
     /* not very efficient, but at least avoids duplicate code */
     /* note: when debugging, we process only one direction */
-    if (!g_debug_flags || (g_debug_flags & FIXPN_DBG_COLNOISE))
+    if (!row_noise_only && (!g_debug_flags || (g_debug_flags & FIXPN_DBG_COLNOISE)))
     {
-        fix_column_noise_rgb(rgb, w, h);
+        fix_column_noise_rgb(rgb, denoised, w, h);
     }
     
-    if (!g_debug_flags || !(g_debug_flags & FIXPN_DBG_COLNOISE))
+    if (row_noise_only || !g_debug_flags || !(g_debug_flags & FIXPN_DBG_COLNOISE))
     {
         /* transpose, process just like before, then transpose back */
-        uint16_t * rgb_t = malloc(w * h * 3 * sizeof(rgb[0]));
+        int size = w * h * 3 * sizeof(rgb[0]);
+        uint16_t * rgb_t = malloc(size);
+        uint16_t * denoised_t = denoised ? malloc(size) : 0;
         transpose(rgb, rgb_t, w, h);
-        fix_column_noise_rgb(rgb_t, h, w);
+        if (denoised_t) transpose(denoised, denoised_t, w, h);
+        fix_column_noise_rgb(rgb_t, denoised_t, h, w);
         transpose(rgb_t, rgb, h, w);
         free(rgb_t);
+        if (denoised_t) free(denoised_t);
     }
     
     printf("\n");
+}
+
+
+void fix_pattern_noise(uint16_t * rgb, int width, int height, int row_noise_only, int debug_flags)
+{
+    fix_pattern_noise_ex(rgb, 0, width, height, row_noise_only, debug_flags);
 }

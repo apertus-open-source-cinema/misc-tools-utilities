@@ -13,7 +13,10 @@
 
 #include "stdint.h"
 
-void fix_pattern_noise(uint16_t * rgb, int width, int height, int debug_flags);
+void fix_pattern_noise(uint16_t * rgb, int width, int height, int row_noise_only, int debug_flags);
+
+/* with this one, you supply a denoised image as well */
+void fix_pattern_noise_ex(uint16_t * rgb, uint16_t * denoised, int width, int height, int row_noise_only, int debug_flags);
 
 /* debug flags */
 #define FIXPN_DBG_ROWNOISE  0

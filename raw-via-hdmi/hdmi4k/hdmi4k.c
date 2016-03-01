@@ -84,7 +84,10 @@ struct cmd_group options[] = {
         "Filtering options", (struct cmd_option[]) {
             { &color_smooth_passes, 3, "--cs",              "Apply 3 passes of color smoothing (from ufraw)" },
             { &color_smooth_passes, 1, "--cs=%d",           "Apply N passes of color smoothing (from ufraw)" },
-            { &fixpn,               1, "--fixpn",           "Fix row and column noise (SLOW, guesswork)" },
+            { &fixpn,               1, "--fixrn",           "Fix row noise by image filtering (slow, guesswork)" },
+            { &fixpn,               2, "--fixpn",           "Fix row and column noise (SLOW, guesswork)" },
+            { &fixpn,               3, "--fixrnt",          "Temporal row noise fix (use with static backgrounds; recommended)" },
+            { &fixpn,               4, "--fixpnt",          "Temporal row/column noise fix (use with static backgrounds)" },
             OPTION_EOL,
         },
     },
@@ -815,6 +818,66 @@ static void rgb_apply_gamma_curve(int preserve_hue)
     }
 }
 
+/* temporal pattern denoising */
+struct
+{
+    int32_t * rgb32;
+    int count;
+} A;
+
+static void moving_average_addframe(uint16_t * rgb16)
+{
+    int n = width * height * 3;
+    int frame_size = n * sizeof(A.rgb32[0]);
+    
+    if (!A.rgb32)
+    {
+        /* allocate memory on first call */
+        A.rgb32 = malloc(frame_size);
+        CHECK(A.rgb32, "malloc");
+
+        for (int i = 0; i < n; i++)
+        {
+            A.rgb32[i] = rgb16[i] * 16384;
+        }
+    }
+        
+    /* add current frame to accumulator */
+    for (int i = 0; i < n; i++)
+    {
+        int pix = rgb16[i] * 16384;
+        int avg = A.rgb32[i];
+        int dif = ABS(pix - avg);
+        if (dif > 500 * 16384)
+        {
+            /* reset moving average if difference gets too high (probably motion) */
+            A.rgb32[i] = pix;
+        }
+        else
+        {
+            A.rgb32[i] = A.rgb32[i] * 7/8 + pix * 1/8;
+        }
+    }
+    A.count++;
+}
+
+static void fix_pattern_noise_temporally(int fixpn_flags)
+{
+    moving_average_addframe(rgb);
+    
+    int n = width * height * 3;
+    uint16_t* avg = malloc(n * sizeof(avg[0]));
+    
+    for (int i = 0; i < n; i++)
+    {
+        avg[i] = (A.rgb32[i] + 8192) / 16384;
+    }
+    
+    fix_pattern_noise_ex(rgb, avg, width, height, fixpn & 1, fixpn_flags);
+    
+    free(avg);
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 1)
@@ -895,7 +958,14 @@ int main(int argc, char** argv)
         if (fixpn)
         {
             int fixpn_flags = fixpn_flags1 | fixpn_flags2;
-            fix_pattern_noise(rgb, width, height, fixpn_flags);
+            if (fixpn & 2)
+            {
+                fix_pattern_noise_temporally(fixpn_flags);
+            }
+            else
+            {
+                fix_pattern_noise(rgb, width, height, fixpn & 1, fixpn_flags);
+            }
         }
         
         if (output_type == OUT_1080P_FILTERED)
