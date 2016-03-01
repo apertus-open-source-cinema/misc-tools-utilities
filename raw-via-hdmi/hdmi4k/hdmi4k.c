@@ -30,6 +30,7 @@
 #include "math.h"
 #include "cmdoptions.h"
 #include "patternnoise.h"
+#include "ufraw_routines.h"
 //#include "wirth.h"
 
 /* image data */
@@ -50,6 +51,7 @@ int out_4k = 1;
 int use_lut = 0;
 int use_matrix = 0;
 float gamma_c = 1;
+int color_smooth_passes = 0;
 
 struct cmd_group options[] = {
     {
@@ -59,6 +61,8 @@ struct cmd_group options[] = {
             { &out_4k,         0,  "--1080p",        "1080p output (disable 4k)" },
             { &filter,         1,  "--filter=%d",    "Use a RGB filter (valid values: 1). 1080p only." },
             { (void*)&gamma_c, 1,  "--gamma=%f",     "Gamma correction for output (just for tests)" },
+            { &color_smooth_passes, 3, "--cs",      "Apply 3 passes of color smoothing (from ufraw)" },
+            { &color_smooth_passes, 1, "--cs=%d",   "Apply N passes of color smoothing (from ufraw)" },
             OPTION_EOL,
         },
     },
@@ -789,6 +793,11 @@ int main(int argc, char** argv)
         {
             printf("Applying LUT...\n");
             apply_lut();
+        }
+        
+        if (color_smooth_passes)
+        {
+            color_smooth(rgb, width, height, color_smooth_passes);
         }
         
         if (use_matrix)
