@@ -50,7 +50,8 @@ int filter = 0;
 int out_4k = 1;
 int use_lut = 0;
 int use_matrix = 0;
-float gamma_c = 1;
+float in_gamma = 0.5;
+float out_gamma = 1;
 int color_smooth_passes = 0;
 
 struct cmd_group options[] = {
@@ -60,9 +61,10 @@ struct cmd_group options[] = {
             { (void*)&exposure,1,  "--exposure=%f",  "Exposure compensation (EV)" },
             { &out_4k,         0,  "--1080p",        "1080p output (disable 4k)" },
             { &filter,         1,  "--filter=%d",    "Use a RGB filter (valid values: 1). 1080p only." },
-            { (void*)&gamma_c, 1,  "--gamma=%f",     "Gamma correction for output (just for tests)" },
-            { &color_smooth_passes, 3, "--cs",      "Apply 3 passes of color smoothing (from ufraw)" },
-            { &color_smooth_passes, 1, "--cs=%d",   "Apply N passes of color smoothing (from ufraw)" },
+            { (void*)&in_gamma, 1, "--in-gamma=%f",  "Gamma value used when recording (as configured in camera)" },
+            { (void*)&out_gamma,1, "--out-gamma=%f", "Gamma correction for output (just for tests)" },
+            { &color_smooth_passes, 3, "--cs",       "Apply 3 passes of color smoothing (from ufraw)" },
+            { &color_smooth_passes, 1, "--cs=%d",    "Apply N passes of color smoothing (from ufraw)" },
             OPTION_EOL,
         },
     },
@@ -188,18 +190,28 @@ static void write_ppm(char* filename, uint16_t * rgb)
     fclose(f);
 }
 
-static void convert_to_linear_and_subtract_darkframe(uint16_t * rgb, uint16_t * dark, int offset)
+static void convert_to_linear_and_subtract_darkframe(uint16_t * rgb, uint16_t * darkframe, int offset)
 {
     /* test footage was recorded with gamma 0.5 */
-    /* dark frame median is about 10000 */
+    /* darkframe frame median is about 10000 */
     /* clipping point is about 50000 */
     double gain = (65535 - offset) / 40000.0 * powf(2, exposure);
 
     for (int i = 0; i < width*height*3; i++)
     {
-        double rgb2 = rgb[i] / 65535.0; rgb2 *= rgb2;
-        double dark2 = dark[i] / 65535.0; dark2 *= dark2;
-        rgb[i] = COERCE((rgb2 - dark2) * 65535 * gain + offset, 0, 65535);
+        double data = rgb[i] / 65535.0;
+        double dark = darkframe[i] / 65535.0;
+        if (in_gamma == 0.5)
+        {
+            data *= data;
+            dark *= dark;
+        }
+        else
+        {
+            data = pow(data, 1/in_gamma);
+            dark = pow(dark, 1/in_gamma);
+        }
+        rgb[i] = COERCE((data - dark) * 65535 * gain + offset, 0, 65535);
     }
 }
 
@@ -687,7 +699,7 @@ static void apply_matrix()
     }
 }
 
-/* Apply a gamma_c curve to red, green and blue image buffers,
+/* Apply a out_gamma curve to red, green and blue image buffers,
  * and round the values to integers between 0 and max.
  * 
  * This step also adds anti-posterization noise before rounding.
@@ -698,7 +710,7 @@ static void apply_gamma()
 
     int w = width;
     int h = height;
-    double gm = 1/gamma_c;
+    double gm = 1/out_gamma;
     for (int y = 0; y < h; y++)
     {
         for (int x = 0; x < w; x++)
@@ -806,7 +818,7 @@ int main(int argc, char** argv)
             apply_matrix();
         }
         
-        if (gamma_c != 1)
+        if (out_gamma != 1)
         {
             apply_gamma();
         }
