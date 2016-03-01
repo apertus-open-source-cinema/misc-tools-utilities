@@ -47,6 +47,7 @@ int fixpn_flags2;
 float exposure = 0;
 int filter = 0;
 int out_4k = 1;
+int use_lut = 0;
 
 struct cmd_group options[] = {
     {
@@ -69,6 +70,10 @@ struct cmd_group options[] = {
     },
     OPTION_GROUP_EOL
 };
+
+static uint16_t Lut_R[65536];
+static uint16_t Lut_G[65536];
+static uint16_t Lut_B[65536];
 
 #define FAIL(fmt,...) { fprintf(stderr, "Error: "); fprintf(stderr, fmt, ## __VA_ARGS__); fprintf(stderr, "\n"); exit(1); }
 #define CHECK(ok, fmt,...) { if (!(ok)) FAIL(fmt, ## __VA_ARGS__); }
@@ -525,6 +530,127 @@ static void rgb_filter_x2()
     free(rgbf);
 }
 
+static int file_exists(char * filename)
+{
+    struct stat buffer;   
+    return (stat (filename, &buffer) == 0);
+}
+
+static int file_exists_warn(char * filename)
+{
+    int ans = file_exists(filename);
+    if (!ans) printf("Not found   : %s\n", filename);
+    return ans;
+}
+
+/* linear interpolation between lut[0] and lut[N] (including N)*/
+static void interp1(uint16_t* lut, int N)
+{
+    int a = lut[0];
+    int b = lut[N];
+    for (int i = 1; i < N; i++)
+    {
+        double k = (double) i / N;
+        lut[i] = round(a * (1-k) + b * k);
+    }
+}
+
+static void read_lut(char * filename)
+{
+    /* Header looks like this:
+     * 
+     * Version 1
+     * From 0.0 1.0
+     * Length 256
+     * Components 3
+     */
+    
+    FILE* f = fopen(filename, "r");
+    CHECK(f, "lut file");
+    
+    int version=0, length=0, components=0;
+    float from_lo=0, from_hi=0;
+    CHECK(fscanf(f, "Version %d\n", &version)           == 1,   "ver"    );
+    CHECK(fscanf(f, "From %f %f\n", &from_lo, &from_hi) == 2,   "from"   );
+    CHECK(fscanf(f, "Length %d\n", &length)             == 1,   "len"    );
+    CHECK(fscanf(f, "Components %d\n", &components)     == 1,   "comp"   );
+    CHECK(fscanf(f, "{\n")                              == 0,   "{"      );
+    CHECK(version                                       == 1,   "ver1"   );
+    CHECK(from_lo                                       == 0.0, "from_lo");
+    CHECK(from_hi                                       == 1.0, "from_hi");
+    
+    printf("%dx%d\n", components, length);
+    for (int i = 0; i < length; i++)
+    {
+        float r,g,b;
+        switch (components)
+        {
+            case 1:
+                CHECK(fscanf(f, "%f\n", &r), "data");
+                g = b = r;
+                break;
+            case 3:
+                CHECK(fscanf(f, "%f %f %f\n", &r, &g, &b) == 3, "data");
+                break;
+            default:
+                printf("components error\n");
+                exit(1);
+        }
+        
+        CHECK(r >= 0 && r <= 1, "R range");
+        CHECK(g >= 0 && g <= 1, "G range");
+        CHECK(b >= 0 && b <= 1, "B range");
+        
+        int this = i * 65535 / (length-1);
+        
+        Lut_R[this] = (int) round(r * 65535);
+        Lut_G[this] = (int) round(g * 65535);
+        Lut_B[this] = (int) round(b * 65535);
+        
+        int prev = (i-1) * 65535 / (length-1);;
+        
+        if (prev >= 0)
+        {
+            interp1(Lut_R + prev, this - prev);
+            interp1(Lut_G + prev, this - prev);
+            interp1(Lut_B + prev, this - prev);
+        }
+    }
+    CHECK(fscanf(f, "}\n")                              == 0,   "}"      );
+    fclose(f);
+    
+    if (0)
+    {
+        f = fopen("lut.m", "w");
+        fprintf(f, "lut = [\n");
+        for (int i = 0; i < 65536; i++)
+        {
+            fprintf(f, "%d %d %d\n", Lut_R[i], Lut_G[i], Lut_B[i]);
+        }
+        fprintf(f, "];");
+        fclose(f);
+    }
+}
+
+static void apply_lut()
+{
+    int w = width;
+    int h = height;
+
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            int r = rgb[3*x   + y*w*3];
+            int g = rgb[3*x+1 + y*w*3];
+            int b = rgb[3*x+2 + y*w*3];
+            rgb[3*x   + y*w*3] = Lut_R[r];
+            rgb[3*x+1 + y*w*3] = Lut_G[g];
+            rgb[3*x+2 + y*w*3] = Lut_B[b];
+        }
+    }
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 1)
@@ -547,8 +673,17 @@ int main(int argc, char** argv)
 
     printf("\n");
     
-    printf("Reading darkframe-hdmi.ppm...\n");
+    printf("Dark frame  : darkframe-hdmi.ppm...\n");
     read_ppm("darkframe-hdmi.ppm", &dark);
+
+    char* lut_filename = "lut.spi1d";
+    if (file_exists_warn(lut_filename))
+    {
+        /* no newline here (read_lut will print more info) */
+        printf("LUT file    : %s ", lut_filename);
+        read_lut(lut_filename);
+        use_lut = 1;
+    }
 
     /* all other arguments are input or output files */
     for (int k = 1; k < argc; k++)
@@ -570,7 +705,7 @@ int main(int argc, char** argv)
             read_ppm(argv[k], &rgb);
         }
         
-        printf("Linear and darkframe...\n");
+        printf("Undo gamma, sub darkframe...\n");
         convert_to_linear_and_subtract_darkframe(rgb, dark, 1024);
 
         if (fixpn)
@@ -589,6 +724,12 @@ int main(int argc, char** argv)
         {
             printf("Filtering 4K...\n");
             rgb_filter_x2();
+        }
+
+        if (use_lut)
+        {
+            printf("Applying LUT...\n");
+            apply_lut();
         }
 
         printf("Output file : %s\n", out_filename);
