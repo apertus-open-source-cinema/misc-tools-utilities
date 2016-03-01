@@ -61,6 +61,7 @@ float out_linearity = 0;
 int ufraw_gamma = 0;
 int plot_out_gamma = 0;
 int color_smooth_passes = 0;
+int tmp_denoise = 0;
 
 struct cmd_group options[] = {
     {
@@ -88,6 +89,7 @@ struct cmd_group options[] = {
             { &fixpn,               2, "--fixpn",           "Fix row and column noise (SLOW, guesswork)" },
             { &fixpn,               3, "--fixrnt",          "Temporal row noise fix (use with static backgrounds; recommended)" },
             { &fixpn,               4, "--fixpnt",          "Temporal row/column noise fix (use with static backgrounds)" },
+            { &tmp_denoise,         1, "--tdn=%d",          "Temporal denoising with adjustable strength (0-100)" },
             OPTION_EOL,
         },
     },
@@ -838,17 +840,17 @@ static void moving_average_addframe(uint16_t * rgb16)
 
         for (int i = 0; i < n; i++)
         {
-            A.rgb32[i] = rgb16[i] * 16384;
+            A.rgb32[i] = rgb16[i] * 1024;
         }
     }
         
     /* add current frame to accumulator */
     for (int i = 0; i < n; i++)
     {
-        int pix = rgb16[i] * 16384;
+        int pix = (int) rgb16[i] * 1024;
         int avg = A.rgb32[i];
         int dif = ABS(pix - avg);
-        if (dif > 500 * 16384)
+        if (dif > 500 * 1024)
         {
             /* reset moving average if difference gets too high (probably motion) */
             A.rgb32[i] = pix;
@@ -863,19 +865,28 @@ static void moving_average_addframe(uint16_t * rgb16)
 
 static void fix_pattern_noise_temporally(int fixpn_flags)
 {
-    moving_average_addframe(rgb);
-    
     int n = width * height * 3;
     uint16_t* avg = malloc(n * sizeof(avg[0]));
     
     for (int i = 0; i < n; i++)
     {
-        avg[i] = (A.rgb32[i] + 8192) / 16384;
+        avg[i] = (A.rgb32[i] + 512) / 1024;
     }
     
     fix_pattern_noise_ex(rgb, avg, width, height, fixpn & 1, fixpn_flags);
     
     free(avg);
+}
+
+static void temporal_denoise()
+{
+    int n = width * height * 3;
+    float k = COERCE(tmp_denoise / 100.0, 0, 1);
+    for (int i = 0; i < n; i++)
+    {
+        int avg = (A.rgb32[i] + 512) / 1024;
+        rgb[i] = rgb[i] * (1-k) + avg * k;
+    }
 }
 
 int main(int argc, char** argv)
@@ -955,19 +966,37 @@ int main(int argc, char** argv)
         printf("Undo gamma, sub darkframe...\n");
         convert_to_linear_and_subtract_darkframe(rgb, dark, 1024);
 
+        if ((fixpn & 2) || tmp_denoise)
+        {
+            moving_average_addframe(rgb);
+        }
+                
+        if (tmp_denoise)
+        {
+            printf("Temporal denoising...\n");
+            temporal_denoise();
+        }
+        
         if (fixpn)
         {
             int fixpn_flags = fixpn_flags1 | fixpn_flags2;
             if (fixpn & 2)
             {
-                fix_pattern_noise_temporally(fixpn_flags);
+                if (tmp_denoise >= 100)
+                {
+                    printf("Warning: temporal pattern noise reduction has no effect.");
+                }
+                else
+                {
+                    fix_pattern_noise_temporally(fixpn_flags);
+                }
             }
             else
             {
                 fix_pattern_noise(rgb, width, height, fixpn & 1, fixpn_flags);
             }
         }
-        
+
         if (output_type == OUT_1080P_FILTERED)
         {
             printf("Filtering image...\n");
