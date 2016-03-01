@@ -48,6 +48,7 @@ float exposure = 0;
 int filter = 0;
 int out_4k = 1;
 int use_lut = 0;
+int use_matrix = 0;
 
 struct cmd_group options[] = {
     {
@@ -651,6 +652,35 @@ static void apply_lut()
     }
 }
 
+static void apply_matrix()
+{
+    /* from config.ocio given by calib_argyll.sh, first IT8 test chart from TT9,
+     * both matrices multiplied and scaled => this is HDMI to sRGB D50*/
+    const float rgb_cam[3][3] = {
+        {    1.59459,  -0.65713,  -0.07318 },
+        {   -0.25228,   1.48252,  -0.23020 },
+        {   -0.11096,  -0.62721,   1.69673 },
+    };
+
+    int w = width;
+    int h = height;
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            int r = rgb[3*x   + y*w*3];
+            int g = rgb[3*x+1 + y*w*3];
+            int b = rgb[3*x+2 + y*w*3];
+            float rr = r * rgb_cam[0][0] + g * rgb_cam[0][1] + b * rgb_cam[0][2];
+            float gg = r * rgb_cam[1][0] + g * rgb_cam[1][1] + b * rgb_cam[1][2];
+            float bb = r * rgb_cam[2][0] + g * rgb_cam[2][1] + b * rgb_cam[2][2];
+            rgb[3*x   + y*w*3] = COERCE(rr, 0, 65535);
+            rgb[3*x+1 + y*w*3] = COERCE(gg, 0, 65535);
+            rgb[3*x+2 + y*w*3] = COERCE(bb, 0, 65535);
+        }
+    }
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 1)
@@ -683,6 +713,7 @@ int main(int argc, char** argv)
         printf("LUT file    : %s ", lut_filename);
         read_lut(lut_filename);
         use_lut = 1;
+        use_matrix = 1;
     }
 
     /* all other arguments are input or output files */
@@ -730,6 +761,12 @@ int main(int argc, char** argv)
         {
             printf("Applying LUT...\n");
             apply_lut();
+        }
+        
+        if (use_matrix)
+        {
+            printf("Applying matrix...\n");
+            apply_matrix();
         }
 
         printf("Output file : %s\n", out_filename);
