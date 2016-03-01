@@ -39,33 +39,52 @@ int width;
 int height;
 
 /* dark frame */
-uint16_t* dark = 0;
+uint16_t* dark;
+
+#define OUT_4K 0
+#define OUT_1080P 1
+#define OUT_1080P_FILTERED 2
 
 /* options */
 int fixpn = 0;
 int fixpn_flags1;
 int fixpn_flags2;
 float exposure = 0;
-int filter = 0;
-int out_4k = 1;
+int filter1080p = 0;
+int output_type = OUT_4K;
 int use_darkframe = 0;
 int use_lut = 0;
 int use_matrix = 0;
 float in_gamma = 0.5;
 float out_gamma = 1;
+float out_linearity = 0;
+int ufraw_gamma = 0;
+int plot_out_gamma = 0;
 int color_smooth_passes = 0;
 
 struct cmd_group options[] = {
     {
-        "Processing options", (struct cmd_option[]) {
-            { &fixpn,          1,  "--fixpn",        "Fix row and column noise (SLOW, guesswork)" },
-            { (void*)&exposure,1,  "--exposure=%f",  "Exposure compensation (EV)" },
-            { &out_4k,         0,  "--1080p",        "1080p output (disable 4k)" },
-            { &filter,         1,  "--filter=%d",    "Use a RGB filter (valid values: 1). 1080p only." },
-            { (void*)&in_gamma, 1, "--in-gamma=%f",  "Gamma value used when recording (as configured in camera)" },
-            { (void*)&out_gamma,1, "--out-gamma=%f", "Gamma correction for output (just for tests)" },
-            { &color_smooth_passes, 3, "--cs",       "Apply 3 passes of color smoothing (from ufraw)" },
-            { &color_smooth_passes, 1, "--cs=%d",    "Apply N passes of color smoothing (from ufraw)" },
+        "Output options", (struct cmd_option[]) {
+            { &output_type, OUT_1080P,          "--1080p",  "1080p output (default 4k)" },
+            { &output_type, OUT_1080P_FILTERED, "--1080pf", "Filtered 1080p output (experimental)" },
+            OPTION_EOL,
+        },
+    },
+    {
+        "Curve options", (struct cmd_option[]) {
+            { (void*)&exposure,     1, "--exposure=%f",     "Exposure compensation (EV)" },
+            { (void*)&in_gamma,     1, "--in-gamma=%f",     "Gamma value used when recording (as configured in camera)" },
+            { (void*)&out_gamma,    1, "--gamma=%f",        "Gamma correction for output" },
+            { (void*)&out_linearity,1, "--linearity=%f",    "Linear segment of the gamma curve" },
+            { (void*)&ufraw_gamma,  1, "--ufraw-gamma",     "Use ufraw defaults: --gamma=0.45 --out-linear=0.1" },
+            OPTION_EOL,
+        },
+    },
+    {
+        "Filtering options", (struct cmd_option[]) {
+            { &color_smooth_passes, 3, "--cs",              "Apply 3 passes of color smoothing (from ufraw)" },
+            { &color_smooth_passes, 1, "--cs=%d",           "Apply N passes of color smoothing (from ufraw)" },
+            { &fixpn,               1, "--fixpn",           "Fix row and column noise (SLOW, guesswork)" },
             OPTION_EOL,
         },
     },
@@ -75,6 +94,7 @@ struct cmd_group options[] = {
             { &fixpn_flags1,   FIXPN_DBG_NOISE,     "--fixpn-dbg-noise",    "Pattern noise: show noise image (original - denoised)" },
             { &fixpn_flags1,   FIXPN_DBG_MASK,      "--fixpn-dbg-mask",     "Pattern noise: show masked areas (edges and highlights)" },
             { &fixpn_flags2,   FIXPN_DBG_COLNOISE,  "--fixpn-dbg-col",      "Pattern noise: debug columns (default: rows)" },
+            { &plot_out_gamma,     1,               "--plot-gamma",         "Plot the output gamma curve (requires octave)" },
             OPTION_EOL,
         },
     },
@@ -97,6 +117,10 @@ static uint16_t Lut_B[65536];
    ({ __typeof__ ((a)+(b)) _a = (a); \
       __typeof__ ((a)+(b)) _b = (b); \
      _a > _b ? _a : _b; })
+
+#define ABS(a) \
+   ({ __typeof__ (a) _a = (a); \
+     _a > 0 ? _a : -_a; })
 
 #define COERCE(x,lo,hi) MAX(MIN((x),(hi)),(lo))
 
@@ -196,7 +220,13 @@ static void convert_to_linear_and_subtract_darkframe(uint16_t * rgb, uint16_t * 
     /* test footage was recorded with gamma 0.5 */
     /* darkframe frame median is about 10000 */
     /* clipping point is about 50000 */
-    double gain = (65535 - offset) / 40000.0 * powf(2, exposure);
+    double gain = (65535 - offset) / 40000.0;
+    
+    if (out_gamma == 1)
+    {
+        /* if we output linear values, apply exposure compensation here */
+        gain *= powf(2, exposure);
+    }
 
     for (int i = 0; i < width*height*3; i++)
     {
@@ -700,28 +730,87 @@ static void apply_matrix()
     }
 }
 
-/* Apply a out_gamma curve to red, green and blue image buffers,
- * and round the values to integers between 0 and max.
- * 
- * This step also adds anti-posterization noise before rounding.
- */
-static void apply_gamma()
+static int gamma_curve[0x10000];
+
+/* gamma curves borrowed from ufraw */
+/* exposure is linear, 1.0 = normal */
+static void setup_gamma_curve(double linear, double gamma, double exposure)
+{
+    float FilmCurve[0x10000];
+    {
+        /* Exposure is set by FilmCurve[].
+         * Set initial slope to exposure (in linear units)
+         */
+        double a = exposure - 1;
+        if (ABS(a) < 1e-5) a = 1e-5;
+        for (int i = 0; i < 0x10000; i++) {
+            double x = (double) i / 0x10000;
+            FilmCurve[i] = (1 - 1/(1+a*x)) / (1 - 1/(1+a)) * 0xFFFF;
+        }
+    }
+    {
+        double a, b, c, g;
+        /* The parameters of the linearized gamma curve are set in a way that
+         * keeps the curve continuous and smooth at the connecting point.
+         * d->linear also changes the real gamma used for the curve (g) in
+         * a way that keeps the derivative at i=0x10000 constant.
+         * This way changing the linearity changes the curve behaviour in
+         * the shadows, but has a minimal effect on the rest of the range. */
+        if (linear < 1.0) {
+            g = gamma * (1.0 - linear) / (1.0 - gamma * linear);
+            a = 1.0 / (1.0 + linear * (g - 1));
+            b = linear * (g - 1) * a;
+            c = pow(a * linear + b, g) / linear;
+        } else {
+            a = b = g = 0.0;
+            c = 1.0;
+        }
+        for (int i = 0; i < 0x10000; i++)
+        {
+            if (FilmCurve[i] < 0x10000 * linear)
+                gamma_curve[i] = MIN(round(c * FilmCurve[i]), 0xFFFF);
+            else
+                gamma_curve[i] = MIN(round(pow(a * FilmCurve[i] / 0x10000 + b,
+                                           g) * 0x10000), 0xFFFF);
+        }
+    }
+    
+    if (plot_out_gamma)
+    {
+        FILE* f = fopen("gamma.m", "w");
+        fprintf(f, "g = [");
+        for (int i = 0; i < 0x10000; i++)
+        {
+            fprintf(f, "%d ", gamma_curve[i]);
+        }
+        fprintf(f, "];\n");
+        fprintf(f, "x = 0:length(g)-1;");
+        fprintf(f, "loglog(x, g, 'o-b', 'markersize', 2, x, x, '-r'); grid on;\n");
+        fclose(f);
+        if(system("octave --persist gamma.m"));
+    }
+}
+
+/* Apply a gamma curve to red, green and blue */
+static void rgb_apply_gamma_curve(int preserve_hue)
 {
     printf("Gamma...\n");
 
-    int w = width;
-    int h = height;
-    double gm = 1/out_gamma;
-    for (int y = 0; y < h; y++)
+    for (int y = 0; y < height; y ++)
     {
-        for (int x = 0; x < w; x++)
+        for (int x = 0; x < width; x ++)
         {
-            double r = rgb[3*x   + y*w*3] / 65535.0;
-            double g = rgb[3*x+1 + y*w*3] / 65535.0;
-            double b = rgb[3*x+2 + y*w*3] / 65535.0;
-            rgb[3*x   + y*w*3] = COERCE(pow(r,gm) * 65535, 0, 65535);
-            rgb[3*x+1 + y*w*3] = COERCE(pow(g,gm) * 65535, 0, 65535);
-            rgb[3*x+2 + y*w*3] = COERCE(pow(b,gm) * 65535, 0, 65535);
+            int r = rgb[3*x   + y*width*3];
+            int g = rgb[3*x+1 + y*width*3];
+            int b = rgb[3*x+2 + y*width*3];
+
+            r = gamma_curve[r];
+            g = gamma_curve[g];
+            b = gamma_curve[b];
+
+            rgb[3*x   + y*width*3] = r;
+            rgb[3*x+1 + y*width*3] = g;
+            rgb[3*x+2 + y*width*3] = b;
         }
     }
 }
@@ -745,6 +834,12 @@ int main(int argc, char** argv)
         if (argv[k][0] == '-')
             parse_commandline_option(argv[k]);
     show_active_options();
+    
+    if (ufraw_gamma)
+    {
+        out_gamma = 0.45;
+        out_linearity = 0.1;
+    }
 
     printf("\n");
     
@@ -765,6 +860,8 @@ int main(int argc, char** argv)
         use_lut = 1;
         use_matrix = 1;
     }
+    
+    setup_gamma_curve(out_linearity, out_gamma, pow(2,exposure));
 
     /* all other arguments are input or output files */
     for (int k = 1; k < argc; k++)
@@ -795,13 +892,13 @@ int main(int argc, char** argv)
             fix_pattern_noise(rgb, width, height, fixpn_flags);
         }
         
-        if (filter == 1)
+        if (output_type == OUT_1080P_FILTERED)
         {
             printf("Filtering image...\n");
             rgb_filter_1(rgb, filters_1);
         }
         
-        if (out_4k)
+        if (output_type == OUT_4K)
         {
             printf("Filtering 4K...\n");
             rgb_filter_x2();
@@ -826,7 +923,7 @@ int main(int argc, char** argv)
         
         if (out_gamma != 1)
         {
-            apply_gamma();
+            rgb_apply_gamma_curve(0);
         }
 
         printf("Output file : %s\n", out_filename);
@@ -834,7 +931,7 @@ int main(int argc, char** argv)
 
         free(rgb); rgb = 0;
 
-        if (out_4k)
+        if (output_type == OUT_4K)
         {
             width /= 2;
             height /= 2;
