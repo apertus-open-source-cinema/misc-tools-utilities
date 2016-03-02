@@ -58,6 +58,7 @@ int use_matrix = 0;
 float in_gamma = 0.5;
 float out_gamma = 1;
 float out_linearity = 0;
+int raw_offset = 0;
 int ufraw_gamma = 0;
 int plot_out_gamma = 0;
 int color_smooth_passes = 0;
@@ -78,6 +79,7 @@ struct cmd_group options[] = {
             { (void*)&out_gamma,    1, "--gamma=%f",        "Gamma correction for output" },
             { (void*)&out_linearity,1, "--linearity=%f",    "Linear segment of the gamma curve" },
             { (void*)&ufraw_gamma,  1, "--ufraw-gamma",     "Use ufraw defaults: --gamma=0.45 --out-linear=0.1" },
+            { (void*)&raw_offset,   1, "--offset=%d",       "Add this value after dark frame (workaround for crushed blacks)" },
             OPTION_EOL,
         },
     },
@@ -964,7 +966,7 @@ int main(int argc, char** argv)
         }
         
         printf("Undo gamma, sub darkframe...\n");
-        convert_to_linear_and_subtract_darkframe(rgb, dark, 1024);
+        convert_to_linear_and_subtract_darkframe(rgb, dark, 1024 + raw_offset);
 
         if (fixpn == 3 || fixpn == 4 || tmp_denoise)
         {
