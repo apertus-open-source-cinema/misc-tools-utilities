@@ -64,6 +64,8 @@ int plot_out_gamma = 0;
 int color_smooth_passes = 0;
 int tmp_denoise = 0;
 
+float custom_wb[3] = {0, 0, 0};
+
 struct cmd_group options[] = {
     {
         "Output options", (struct cmd_option[]) {
@@ -80,6 +82,7 @@ struct cmd_group options[] = {
             { (void*)&out_linearity,1, "--linearity=%f",    "Linear segment of the gamma curve" },
             { (void*)&ufraw_gamma,  1, "--ufraw-gamma",     "Use ufraw defaults: --gamma=0.45 --out-linear=0.1" },
             { (void*)&raw_offset,   1, "--offset=%d",       "Add this value after dark frame (workaround for crushed blacks)" },
+            { (int*)&custom_wb[0],  3, "--wb=%f,%f,%f",     "White balance with RGB multipliers" },
             OPTION_EOL,
         },
     },
@@ -737,6 +740,23 @@ static void apply_matrix()
     }
 }
 
+static void white_balance(float multipliers[3])
+{
+    printf("White balance %.2f,%.2f,%.2f...\n", multipliers[0], multipliers[1], multipliers[2]);
+    int w = width;
+    int h = height;
+    for (int y = 0; y < h; y ++)
+    {
+        for (int x = 0; x < w; x ++)
+        {
+            for (int ch = 0; ch < 3; ch++)
+            {
+                rgb[3*x+ch + y*w*3] = COERCE(rgb[3*x+ch + y*w*3] * multipliers[ch], 0, 65535);
+            }
+        }
+    }
+}
+
 static int gamma_curve[0x10000];
 
 /* gamma curves borrowed from ufraw */
@@ -1020,6 +1040,11 @@ int main(int argc, char** argv)
         if (color_smooth_passes)
         {
             color_smooth(rgb, width, height, color_smooth_passes);
+        }
+        
+        if (custom_wb[0] || custom_wb[1] || custom_wb[2])
+        {
+            white_balance(custom_wb);
         }
         
         if (use_matrix)
