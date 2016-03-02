@@ -966,7 +966,7 @@ int main(int argc, char** argv)
         printf("Undo gamma, sub darkframe...\n");
         convert_to_linear_and_subtract_darkframe(rgb, dark, 1024);
 
-        if ((fixpn & 2) || tmp_denoise)
+        if (fixpn == 3 || fixpn == 4 || tmp_denoise)
         {
             moving_average_addframe(rgb);
         }
@@ -980,7 +980,7 @@ int main(int argc, char** argv)
         if (fixpn)
         {
             int fixpn_flags = fixpn_flags1 | fixpn_flags2;
-            if (fixpn & 2)
+            if (fixpn == 3 || fixpn == 4)
             {
                 if (tmp_denoise >= 100)
                 {
