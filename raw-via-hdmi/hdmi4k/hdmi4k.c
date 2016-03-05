@@ -262,107 +262,159 @@ static void convert_to_linear_and_subtract_darkframe(uint16_t * rgb, uint16_t * 
 }
 
 /**
- * The sum of these filters is 0 when filtering
- * different channels, and is 1 on the same channel.
+ * We'll use these filters to extract details from other color channels,
+ * basically solving a disguised demosaicing problem.
  * 
- * Reason: this way, the filters will not mix the color channels,
- * but they can borrow local details (sharpness) from other channels.
+ * Hypothesis: on areas with solid color, ratios between color channels are constant.
+ * That means, we should work on linear data (either RGB or camera native, without any offsets).
+ * 
+ * To match two color channels, we'll apply a low-pass filter on both channels,
+ * and scale the predictor channel to match the recovered channel,
+ * with the inverse of their filtered versions' ratio (per-pixel).
+ * 
+ * After that step, we can borrow high-frequency details from the other channels
+ * using these filters.
+ * 
+ * The filters were obtained from optimization on a pair of test images:
+ * raw12 + HDMI frame, both from some static scene, with pixel-perfect alignment.
+ * 
+ * There's still a lot of room for improvement here.
  */
 
-const int filters_1[3][2][3][3] = {
+/* fspecial('gaussian', 5, 2) * 8192 */
+/* see http://stackoverflow.com/questions/25216834/converting-2d-mask-to-1d-in-gaussian-blur */
+const int gaussian_s2_sep5[] = { 1249, 1817, 2059, 1817, 1249 };
+
+const int filters_1080p[3][3][3][3] = {
     /* Red: */
     {
         /* from red: */
         {
-            {   827,  916,  733 },
-            {   864, 3159,  623 },
-            {   460,   83,  527 },
+            {    89,  938,  156 },
+            {   180, 2981,  395 },
+            {  -259,  115,   63 },
         },
         /* from green: */
         {
-            { -1206,  -71, -354 },
-            {  -775, 3954,  212 },
-            {  -858,  248,-1150 },
+            {  -617,  458,  599 },
+            {   410, 3046, 1209 },
+            {    -6,   -4, -167 },
+        },
+        /* from blue: */
+        {
+            {  -168, -380, -339 },
+            {   -32,  355, -453 },
+            {   147,   36, -558 },
         },
     },
     /* Green: */
     {
+        /* from red: */
+        {
+            {   -87,  454,  312 },
+            {   -49, 2453,  115 },
+            {    37, -205,  203 },
+        },
         /* from green: */
         {
-            {   164,  316,  313 },
-            {  1350, 3658, 1096 },
-            {   506,  658,  131 },
+            {  -561,   74, -231 },
+            {   386, 3268,  145 },
+            {   -12,   64, -676 },
         },
-        /* from red and blue: */
+        /* from blue: */
         {
-            {  -904,  148, -579 },
-            {  -613, 3946, -509 },
-            {  -715,  -82, -692 },
+            {    94,  -46,  -20 },
+            {   331, 1005,  259 },
+            {   244,  525,  121 },
         },
     },
     /* Blue: */
     {
-        /* from blue: */
+        /* from red: */
         {
-            {   347,  186,  455 },
-            {   753, 2172, 1097 },
-            {   732, 1250, 1200 },
+            {  -366,  326,  214 },
+            {  -376, 2148,  -80 },
+            {  -128, -228, -118 },
         },
         /* from green: */
         {
-            {  -576,   43, -660 },
-            {   397, 2759, -801 },
-            {   179, -233,-1108 },
+            {   189, -171, -422 },
+            {  1342, 2858,  132 },
+            {  1151, -115, -543 },
+        },
+        /* from blue: */
+        {
+            {  -231,  184, -234 },
+            {   100, 1375,  280 },
+            {  -108,  787,  221 },
         },
     },
 };
 
-const int filters_4k[4][3][2][3][3] = {
+const int filters_4k[4][3][3][3][3] = {
     /* Sub-image #1 (0,0): */
     {
         /* Red: */
         {
             /* from red: */
             {
-                {  1476, 1564,  550 },
-                {  1161, 1890,  343 },
-                {   561,  130,  517 },
+                {   496, 1569, -368 },
+                {   188, 2358, -240 },
+                {  -123,  236, -112 },
             },
             /* from green: */
             {
-                { -1256,  948, -303 },
-                {    71, 2900, -299 },
-                {  -868, -413, -780 },
+                {  -352,  995, 1146 },
+                {   635, 3898,  315 },
+                {  -325,  -68,  356 },
+            },
+            /* from blue: */
+            {
+                {  -262, -545, -465 },
+                {   396,  471, -522 },
+                {  -220, -629, -662 },
             },
         },
         /* Green: */
         {
+            /* from red: */
+            {
+                {   212, 1131, -211 },
+                {    -7, 1902, -412 },
+                {   212,   -0,  160 },
+            },
             /* from green: */
             {
-                {   366, 1043,  417 },
-                {  1861, 2689,  712 },
-                {   529,  175,  400 },
+                {  -291,  454,  276 },
+                {   722, 4080, -752 },
+                {  -362, -237,  -99 },
             },
-            /* from red and blue: */
+            /* from blue: */
             {
-                {  -474, 1119, -890 },
-                {    60, 2538, -729 },
-                {  -623, -365, -636 },
+                {    13, -175, -124 },
+                {   821, 1168,  168 },
+                {  -193, -142, -141 },
             },
         },
         /* Blue: */
         {
-            /* from blue: */
+            /* from red: */
             {
-                {   506,  499,  470 },
-                {  1332, 2146, 1135 },
-                {   584,  707,  813 },
+                {   -59,  947, -281 },
+                {  -353, 1598, -631 },
+                {    63,   -7, -184 },
             },
             /* from green: */
             {
-                {  -292,  718, -836 },
-                {   985, 1370,-1113 },
-                {   220, -485, -567 },
+                {   556,   56,  171 },
+                {  1741, 3557, -544 },
+                {   758, -507,  137 },
+            },
+            /* from blue: */
+            {
+                {  -343,   75, -404 },
+                {   599, 1553,  139 },
+                {  -512,  109,  -79 },
             },
         },
     },
@@ -372,45 +424,63 @@ const int filters_4k[4][3][2][3][3] = {
         {
             /* from red: */
             {
-                {   882, 1492, 1251 },
-                {   429, 1818, 1138 },
-                {   474,  140,  568 },
+                {   -74, 1562,  503 },
+                {  -180, 1538,  998 },
+                {  -369,  368,  -49 },
             },
             /* from green: */
             {
-                { -1187,  540,    3 },
-                {  -711, 2502,  851 },
-                {  -672, -260,-1066 },
+                {  -627, 1036,  947 },
+                {   372, 3219,  477 },
+                {   368,-1165,  147 },
+            },
+            /* from blue: */
+            {
+                {  -252, -623, -382 },
+                {  -433, 1252,  353 },
+                {   137, -105, -827 },
             },
         },
         /* Green: */
         {
+            /* from red: */
+            {
+                {  -199,  921,  550 },
+                {  -222, 1021,  730 },
+                {     3,  130,   86 },
+            },
             /* from green: */
             {
-                {   314,  959,  576 },
-                {  1084, 2688, 1551 },
-                {   540,  200,  280 },
+                {  -675,  928,  -89 },
+                {   166, 3856, -706 },
+                {   290,-1247, -243 },
             },
-            /* from red and blue: */
+            /* from blue: */
             {
-                {  -937,  972, -321 },
-                { -1006, 2393,  433 },
-                {  -522, -286, -726 },
+                {    26, -298,  -14 },
+                {  -148, 1858, 1252 },
+                {   186,  225, -186 },
             },
         },
         /* Blue: */
         {
-            /* from blue: */
+            /* from red: */
             {
-                {   298,  591,  567 },
-                {   657, 2044, 1922 },
-                {   456,  678,  979 },
+                {  -431,  774,  479 },
+                {  -515,  745,  508 },
+                {  -175,  195, -159 },
             },
             /* from green: */
             {
-                {  -416,  545, -561 },
-                {   187, 1646, -538 },
-                {   193, -241, -815 },
+                {   109,  771, -502 },
+                {  1091, 3647, -788 },
+                {  1284,-1327, -194 },
+            },
+            /* from blue: */
+            {
+                {  -342,  -85, -202 },
+                {  -409, 2203, 1363 },
+                {  -158,  421, -113 },
             },
         },
     },
@@ -420,45 +490,63 @@ const int filters_4k[4][3][2][3][3] = {
         {
             /* from red: */
             {
-                {   658,  230,  556 },
-                {  1862, 2764,  374 },
-                {   703,  543,  502 },
+                {  -188, -860,  159 },
+                {  1202, 5894,-1495 },
+                {  -595, -425,   -9 },
             },
             /* from green: */
             {
-                {  -776, -258, -113 },
-                {  -578, 2812, -354 },
-                {  -774,  947, -906 },
+                {  -367,   88,  541 },
+                {  -285, 4327, 1704 },
+                {   387,  504,  252 },
+            },
+            /* from blue: */
+            {
+                {  -527,  156, -287 },
+                {   119, -680,-1001 },
+                {   434, -317, -549 },
             },
         },
         /* Green: */
         {
+            /* from red: */
+            {
+                {  -314,-1180,  453 },
+                {   824, 5407,-1764 },
+                {  -369, -749,  148 },
+            },
             /* from green: */
             {
-                {   333,  -35,  505 },
-                {  1506, 2736,  674 },
-                {   954, 1211,  308 },
+                {  -227, -631,  -77 },
+                {  -326, 4289,  671 },
+                {   542,  539, -308 },
             },
-            /* from red and blue: */
+            /* from blue: */
             {
-                {  -907, -339, -452 },
-                {   386, 2938,-1016 },
-                {  -585,  674, -699 },
+                {  -310,  515,  -37 },
+                {   554,  -35, -439 },
+                {   591,  301,  122 },
             },
         },
         /* Blue: */
         {
-            /* from blue: */
+            /* from red: */
             {
-                {   363,  245,  523 },
-                {   863, 1443,  561 },
-                {  1210, 1647, 1337 },
+                {  -652,-1210,  277 },
+                {   494, 5023,-1890 },
+                {  -528, -868, -231 },
             },
             /* from green: */
             {
-                {  -427, -395, -494 },
-                {   751, 1918, -918 },
-                {   554,   77,-1066 },
+                {   530, -961,    4 },
+                {   653, 3643,  782 },
+                {  1893,  337,  -84 },
+            },
+            /* from blue: */
+            {
+                {  -548,  722, -331 },
+                {   249,  388, -562 },
+                {   204,  579,  255 },
             },
         },
     },
@@ -468,87 +556,198 @@ const int filters_4k[4][3][2][3][3] = {
         {
             /* from red: */
             {
-                {   573,  178,  687 },
-                {   823, 2604, 1581 },
-                {   455,  616,  675 },
+                {   -60, -123,  133 },
+                {  -110, 2930, 1334 },
+                {  -276,  346,   -1 },
             },
             /* from green: */
             {
-                {  -547, -333, -243 },
-                { -1095, 2140,  779 },
-                { -1036, 1021, -686 },
+                {     2, -438,  120 },
+                {  -120, 3409, 1368 },
+                {    52,  514, -231 },
+            },
+            /* from blue: */
+            {
+                {    48,  -14,   24 },
+                {  -620,   73, -501 },
+                {   -25,  508, -124 },
             },
         },
         /* Green: */
         {
+            /* from red: */
+            {
+                {  -104, -619,  300 },
+                {  -301, 2360,  996 },
+                {    49,  -34,   70 },
+            },
             /* from green: */
             {
-                {   423,   67,  303 },
-                {   870, 2547, 1535 },
-                {   646, 1295,  506 },
+                {    25, -680, -724 },
+                {  -296, 3786,  275 },
+                {   -13,  859, -830 },
             },
-            /* from red and blue: */
+            /* from blue: */
             {
-                {  -755, -487, -470 },
-                {  -795, 2712,  390 },
-                {  -946,  787, -436 },
+                {   317,  269,  343 },
+                {  -335,  615,  194 },
+                {    64,  946,  692 },
             },
         },
         /* Blue: */
         {
-            /* from blue: */
+            /* from red: */
             {
-                {   286,  326,  541 },
-                {   364, 1446, 1085 },
-                {   744, 1535, 1865 },
+                {  -355, -697,  225 },
+                {  -625, 2112,  808 },
+                {  -112,  -70, -242 },
             },
             /* from green: */
             {
-                {  -217, -460, -701 },
-                {    19, 1807,  -21 },
-                {   165,  588,-1180 },
+                {   659, -722, -948 },
+                {   658, 3444,  149 },
+                {  1199,  796, -765 },
+            },
+            /* from blue: */
+            {
+                {   -57,  436,  164 },
+                {  -565,  911,  195 },
+                {  -364, 1205,  773 },
             },
         },
     },
 };
 
-static void rgb_filter_1(uint16_t* rgb, const int filters[3][2][3][3])
+/* separable 5x5 filter */
+static void rgb_filter_sep5(uint16_t* img, int w, int h, const int filter[5])
 {
-    int size = width * height * 3 * sizeof(int32_t);
+    int size = w * h * 3 * sizeof(int32_t);
     int32_t * aux = malloc(size);
-    memset(aux, 0, size);
-    
-    for (int y = 1; y < height-1; y++)
+
+    for (int i = 0; i < w * h * 3; i++)
     {
-        for (int x = 1; x < width-1; x++)
+        aux[i] = img[i] * 8192;
+    }
+    
+    /* apply the filter on the X direction */
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 2; x < w-2; x++)
         {
-            /* compute channel c */
             for (int c = 0; c < 3; c++)
             {
-                /* from predictor channel p */
-                for (int ip = 0; ip < (c == 1 ? 3 : 2); ip++)
-                {
-                    int p = (ip == 0) ? c :                 /* first predictor: same channel (this filter has nonzero mean) */
-                            (c  == 1) ? (ip == 1 ? 0 : 2)   /* green has 3 predictors, last two being red and blue, and these filters have zero mean */
-                                      : 1 ;                 /* red/blue have 2 predictors, second one is green, and its filter has zero mean */
-                    
-                    int f = MIN(ip,1);                      /* the two extra predictors from green use the same filter */
-                    
-                    aux[x*3+c + y*width*3] +=
-                        filters[c][f][0][0] * rgb[(x-1)*3+p + (y-1)*width*3] + filters[c][f][0][1] * rgb[x*3+p + (y-1)*width*3] + filters[c][f][0][2] * rgb[(x+1)*3+p + (y-1)*width*3] +
-                        filters[c][f][1][0] * rgb[(x-1)*3+p + (y+0)*width*3] + filters[c][f][1][1] * rgb[x*3+p + (y+0)*width*3] + filters[c][f][1][2] * rgb[(x+1)*3+p + (y+0)*width*3] +
-                        filters[c][f][2][0] * rgb[(x-1)*3+p + (y+1)*width*3] + filters[c][f][2][1] * rgb[x*3+p + (y+1)*width*3] + filters[c][f][2][2] * rgb[(x+1)*3+p + (y+1)*width*3];
-                }
+                aux[x*3+c + y*width*3] =
+                    filter[0] * img[(x-2)*3+c + y*width*3] +
+                    filter[1] * img[(x-1)*3+c + y*width*3] + 
+                    filter[2] * img[(x+0)*3+c + y*width*3] +
+                    filter[3] * img[(x+1)*3+c + y*width*3] + 
+                    filter[4] * img[(x+2)*3+c + y*width*3] ;
             }
         }
     }
 
     for (int i = 0; i < width * height * 3; i++)
     {
-        rgb[i] = COERCE(aux[i] / 8192, 0, 65535);
+        img[i] = COERCE(aux[i] / 8192, 0, 65535);
+    }
+
+    /* same for the Y direction */
+    for (int x = 0; x < w; x++)
+    {
+        for (int y = 2; y < h-2; y++)
+        {
+            for (int c = 0; c < 3; c++)
+            {
+                aux[x*3+c + y*width*3] =
+                    filter[0] * img[x*3+c + (y-2)*width*3] +
+                    filter[1] * img[x*3+c + (y-1)*width*3] + 
+                    filter[2] * img[x*3+c + (y+0)*width*3] +
+                    filter[3] * img[x*3+c + (y+1)*width*3] + 
+                    filter[4] * img[x*3+c + (y+2)*width*3] ;
+            }
+        }
+    }
+
+    for (int i = 0; i < width * height * 3; i++)
+    {
+        img[i] = COERCE(aux[i] / 8192, 0, 65535);
     }
     
     free(aux);
+}
+
+/* adjust all color channels to match ch */
+static void rgb_match_to_channel(uint16_t* img, int ch, int w, int h)
+{
+    int size = w * h * 3 * sizeof(uint16_t);
+    uint16_t * blr = malloc(size);
+
+    /* low-pass filter: fspecial('gaussian', 5, 2) */
+    memcpy(blr, img, size);
+    rgb_filter_sep5(blr, width, height, gaussian_s2_sep5);
+
+    /* use the filtered image ratio as the scaling factor (per pixel) */
+    for (int c = 0; c < 3; c++)
+    {
+        if (c != ch)
+        {
+            for (int i = 0; i < w*h; i++)
+            {
+                img[i*3+c] = COERCE((int64_t) img[i*3+c] * blr[i*3+ch] / MAX(blr[i*3+c], 1), 0, 65535);
+            }
+        }
+    }
+    
+    free(blr);
+}
+
+/* operate on RGB images */
+/* filter one channel from 3 predictors */
+static void rgb_filter_3x3_1ch_3p(uint16_t* out, uint16_t* pred, int c, int w, int h, const int filters[3][3][3])
+{
+    int size = w * h * 3 * sizeof(int32_t);
+    int32_t * aux = malloc(size);
+    memset(aux, 0, size);
+
+    for (int y = 1; y < h-1; y++)
+    {
+        for (int x = 1; x < w-1; x++)
+        {
+            /* compute channel c from predictor channel p */
+            for (int p = 0; p < 3; p++)
+            {
+                 aux[x*3+c + y*width*3] +=
+                    filters[p][0][0] * pred[(x-1)*3+p + (y-1)*width*3] + filters[p][0][1] * pred[x*3+p + (y-1)*width*3] + filters[p][0][2] * pred[(x+1)*3+p + (y-1)*width*3] +
+                    filters[p][1][0] * pred[(x-1)*3+p + (y+0)*width*3] + filters[p][1][1] * pred[x*3+p + (y+0)*width*3] + filters[p][1][2] * pred[(x+1)*3+p + (y+0)*width*3] +
+                    filters[p][2][0] * pred[(x-1)*3+p + (y+1)*width*3] + filters[p][2][1] * pred[x*3+p + (y+1)*width*3] + filters[p][2][2] * pred[(x+1)*3+p + (y+1)*width*3] ;
+            }
+        }
+    }
+
+    for (int i = 0; i < w * h; i++)
+    {
+        out[i*3+c] = COERCE(aux[i*3+c] / 8192, 0, 65535);
+    }
+    
+    free(aux);
+}
+
+static void rgb_filters_debayer(uint16_t* img, const int filters[3][3][3][3])
+{
+    int size = width * height * 3 * sizeof(uint16_t);
+    uint16_t * img0 = malloc(size);
+    uint16_t * adj = malloc(size);
+    memcpy(img0, img, size);
+
+    for (int ch = 0; ch < 3; ch++)
+    {
+        memcpy(adj, img0, size);
+        rgb_match_to_channel(adj, ch, width, height);
+        rgb_filter_3x3_1ch_3p(img, adj, ch, width, height, filters[ch]);
+    }
+    
+    free(adj);
+    free(img0);
 }
 
 static void copy_subimage(uint16_t* rgbx2, uint16_t* rgb, int dx, int dy)
@@ -564,27 +763,37 @@ static void copy_subimage(uint16_t* rgbx2, uint16_t* rgb, int dx, int dy)
         }
     }
 }
-static void rgb_filter_x2()
+
+static void rgb_filters_debayer_x2(const int filters_4k[4][3][3][3][3])
 {
     int size = width * height * 3 * sizeof(uint16_t);
-    uint16_t* rgbf = malloc(size);
+    uint16_t * rgbf = malloc(size);
     uint16_t* rgbx2 = malloc(size * 4);
-    
-    memcpy(rgbf, rgb, size);
-    rgb_filter_1(rgbf, filters_4k[0]);
-    copy_subimage(rgbx2, rgbf, 0, 0);
-    
-    memcpy(rgbf, rgb, size);
-    rgb_filter_1(rgbf, filters_4k[1]);
-    copy_subimage(rgbx2, rgbf, 1, 0);
 
-    memcpy(rgbf, rgb, size);
-    rgb_filter_1(rgbf, filters_4k[2]);
-    copy_subimage(rgbx2, rgbf, 0, 1);
-
-    memcpy(rgbf, rgb, size);
-    rgb_filter_1(rgbf, filters_4k[3]);
-    copy_subimage(rgbx2, rgbf, 1, 1);
+    uint16_t * adj_r = malloc(size);
+    uint16_t * adj_g = malloc(size);
+    uint16_t * adj_b = malloc(size);
+    uint16_t * adj[] = { adj_r, adj_g, adj_b };
+    
+    /* adjust color channels to match red, green and blue */
+    for (int ch = 0; ch < 3; ch++)
+    {
+        memcpy(adj[ch], rgb, size);
+        rgb_match_to_channel(adj[ch], ch, width, height);
+    }
+    
+    /* recover the details by filtering the adjusted color channels */
+    for (int k = 0; k < 4; k++)
+    {
+        memcpy(rgbf, rgb, size);
+        
+        for (int ch = 0; ch < 3; ch++)
+        {
+            rgb_filter_3x3_1ch_3p(rgbf, adj[ch], ch, width, height, filters_4k[k][ch]);
+        }
+        
+        copy_subimage(rgbx2, rgbf, k%2, k/2);
+    }
     
     /* replace output buffer with a double-res one */
     free(rgb);
@@ -592,7 +801,11 @@ static void rgb_filter_x2()
     width *= 2;
     height *= 2;
     
+    /* that's it! */
     free(rgbf);
+    free(adj_r);
+    free(adj_g);
+    free(adj_b);
 }
 
 static int file_exists(char * filename)
@@ -1024,18 +1237,6 @@ int main(int argc, char** argv)
             }
         }
 
-        if (output_type == OUT_1080P_FILTERED)
-        {
-            printf("Filtering image...\n");
-            rgb_filter_1(rgb, filters_1);
-        }
-        
-        if (output_type == OUT_4K)
-        {
-            printf("Filtering 4K...\n");
-            rgb_filter_x2();
-        }
-
         if (use_lut)
         {
             printf("Applying LUT...\n");
@@ -1051,7 +1252,19 @@ int main(int argc, char** argv)
         {
             white_balance(custom_wb);
         }
+
+        if (output_type == OUT_1080P_FILTERED)
+        {
+            printf("Filtering image...\n");
+            rgb_filters_debayer(rgb, filters_1080p);
+        }
         
+        if (output_type == OUT_4K)
+        {
+            printf("Filtering 4K...\n");
+            rgb_filters_debayer_x2(filters_4k);
+        }
+
         if (use_matrix)
         {
             printf("Applying matrix...\n");
