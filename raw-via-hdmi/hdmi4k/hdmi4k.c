@@ -232,12 +232,6 @@ static void convert_to_linear_and_subtract_darkframe(uint16_t * rgb, uint16_t * 
     /* clipping point is about 50000 */
     double gain = (65535 - offset) / 40000.0;
     
-    if (out_gamma == 1)
-    {
-        /* if we output linear values, apply exposure compensation here */
-        gain *= powf(2, exposure);
-    }
-
     for (int i = 0; i < width*height*3; i++)
     {
         double data = rgb[i] / 65535.0;
@@ -1062,7 +1056,7 @@ int main(int argc, char** argv)
             apply_matrix();
         }
         
-        if (out_gamma != 1)
+        if (out_gamma != 1 || exposure != 0)
         {
             rgb_apply_gamma_curve(0);
         }
