@@ -725,9 +725,9 @@ static void apply_matrix()
     /* from config.ocio given by calib_argyll.sh, first IT8 test chart from TT9,
      * both matrices multiplied and scaled => this is HDMI to sRGB D50*/
     const float rgb_cam[3][3] = {
-        {    1.59459,  -0.65713,  -0.07318 },
-        {   -0.25228,   1.48252,  -0.23020 },
-        {   -0.11096,  -0.62721,   1.69673 },
+        {    1.16113,  -0.53352,  -0.07452 },
+        {   -0.18029,   1.25180,  -0.21653 },
+        {   -0.07405,  -0.52073,   1.59754 },
     };
 
     int w = width;
