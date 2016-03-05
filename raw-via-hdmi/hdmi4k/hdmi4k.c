@@ -49,7 +49,6 @@ uint16_t* dark;
 int fixpn = 0;
 int fixpn_flags1;
 int fixpn_flags2;
-float exposure = 0;
 int filter1080p = 0;
 int output_type = OUT_4K;
 int use_darkframe = 0;
@@ -58,6 +57,8 @@ int use_matrix = 0;
 float in_gamma = 0.5;
 float out_gamma = 1;
 float out_linearity = 0;
+float exposure_lin = 0;
+float exposure_film = 0;
 int raw_offset = 0;
 int ufraw_gamma = 0;
 int plot_out_gamma = 0;
@@ -76,7 +77,8 @@ struct cmd_group options[] = {
     },
     {
         "Curve options", (struct cmd_option[]) {
-            { (void*)&exposure,     1, "--exposure=%f",     "Exposure compensation (EV)" },
+            { (void*)&exposure_lin, 1, "--exposure=%f",     "Exposure compensation (EV), linear gain" },
+            { (void*)&exposure_film,1, "--soft-film=%f",    "Exposure compensation (EV) using a soft-film curve" },
             { (void*)&in_gamma,     1, "--in-gamma=%f",     "Gamma value used when recording (as configured in camera)" },
             { (void*)&out_gamma,    1, "--gamma=%f",        "Gamma correction for output" },
             { (void*)&out_linearity,1, "--linearity=%f",    "Linear segment of the gamma curve" },
@@ -764,18 +766,18 @@ static int gamma_curve[0x10000];
 
 /* gamma curves borrowed from ufraw */
 /* exposure is linear, 1.0 = normal */
-static void setup_gamma_curve(double linear, double gamma, double exposure)
+static void setup_gamma_curve(double linear, double gamma, double exposure_lin, double exposure_film)
 {
     float FilmCurve[0x10000];
     {
         /* Exposure is set by FilmCurve[].
          * Set initial slope to exposure (in linear units)
          */
-        double a = exposure - 1;
+        double a = exposure_film - 1;
         if (ABS(a) < 1e-5) a = 1e-5;
         for (int i = 0; i < 0x10000; i++) {
-            double x = (double) i / 0x10000;
-            FilmCurve[i] = (1 - 1/(1+a*x)) / (1 - 1/(1+a)) * 0xFFFF;
+            double x = (double) i * exposure_lin / 0x10000;
+            FilmCurve[i] = COERCE((1 - 1/(1+a*x)) / (1 - 1/(1+a)) * 0xFFFF, 0, 0xFFFF);
         }
     }
     {
@@ -966,7 +968,7 @@ int main(int argc, char** argv)
         use_matrix = 1;
     }
     
-    setup_gamma_curve(out_linearity, out_gamma, pow(2,exposure));
+    setup_gamma_curve(out_linearity, out_gamma, pow(2,exposure_lin), pow(2,exposure_film));
 
     /* all other arguments are input or output files */
     for (int k = 1; k < argc; k++)
@@ -1056,7 +1058,7 @@ int main(int argc, char** argv)
             apply_matrix();
         }
         
-        if (out_gamma != 1 || exposure != 0)
+        if (out_gamma != 1 || exposure_lin != 0 || exposure_film != 0)
         {
             rgb_apply_gamma_curve(0);
         }
