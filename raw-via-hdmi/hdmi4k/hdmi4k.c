@@ -242,6 +242,12 @@ static void convert_to_linear_and_subtract_darkframe(uint16_t * rgb, uint16_t * 
     {
         double data = rgb[i] / 65535.0;
         double dark = darkframe ? darkframe[i] / 65535.0 : 0;
+        
+        /* undo HDMI 16-235 scaling */
+        data = data * (235.0 - 16.0) / 255.0 + 16.0 / 255.0;
+        dark = dark * (235.0 - 16.0) / 255.0 + 16.0 / 255.0;
+        
+        /* undo gamma applied from our camera, before recording */
         if (in_gamma == 0.5)
         {
             data *= data;
@@ -252,6 +258,9 @@ static void convert_to_linear_and_subtract_darkframe(uint16_t * rgb, uint16_t * 
             data = pow(data, 1/in_gamma);
             dark = pow(dark, 1/in_gamma);
         }
+        
+        /* subtract dark frame, scale the (now linear) values to cover the full range
+         * and add an offset to avoid crushed blacks and clamp values */
         rgb[i] = COERCE((data - dark) * 65535 * gain + offset, 0, 65535);
     }
 }
