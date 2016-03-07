@@ -703,33 +703,25 @@ static void rgb_match_to_channel(uint16_t* img, int ch, int w, int h)
 
 /* operate on RGB images */
 /* filter one channel from 3 predictors */
-static void rgb_filter_3x3_1ch_3p(uint16_t* out, uint16_t* pred, int c, int w, int h, const int filters[3][3][3])
+/* only updates that color channel in the output image */
+static void rgb_filter_3x3_1ch_3p(uint16_t* img, uint16_t* pred, int c, int w, int h, const int filters[3][3][3])
 {
-    int size = w * h * 3 * sizeof(int32_t);
-    int32_t * aux = malloc(size);
-    memset(aux, 0, size);
-
     for (int y = 1; y < h-1; y++)
     {
         for (int x = 1; x < w-1; x++)
         {
             /* compute channel c from predictor channel p */
+            int sum = 0;
             for (int p = 0; p < 3; p++)
             {
-                 aux[x*3+c + y*width*3] +=
-                    filters[p][0][0] * pred[(x-1)*3+p + (y-1)*width*3] + filters[p][0][1] * pred[x*3+p + (y-1)*width*3] + filters[p][0][2] * pred[(x+1)*3+p + (y-1)*width*3] +
-                    filters[p][1][0] * pred[(x-1)*3+p + (y+0)*width*3] + filters[p][1][1] * pred[x*3+p + (y+0)*width*3] + filters[p][1][2] * pred[(x+1)*3+p + (y+0)*width*3] +
-                    filters[p][2][0] * pred[(x-1)*3+p + (y+1)*width*3] + filters[p][2][1] * pred[x*3+p + (y+1)*width*3] + filters[p][2][2] * pred[(x+1)*3+p + (y+1)*width*3] ;
+                 sum +=
+                    filters[p][0][0] * pred[(x-1)*3+p + (y-1)*w*3] + filters[p][0][1] * pred[x*3+p + (y-1)*w*3] + filters[p][0][2] * pred[(x+1)*3+p + (y-1)*w*3] +
+                    filters[p][1][0] * pred[(x-1)*3+p + (y+0)*w*3] + filters[p][1][1] * pred[x*3+p + (y+0)*w*3] + filters[p][1][2] * pred[(x+1)*3+p + (y+0)*w*3] +
+                    filters[p][2][0] * pred[(x-1)*3+p + (y+1)*w*3] + filters[p][2][1] * pred[x*3+p + (y+1)*w*3] + filters[p][2][2] * pred[(x+1)*3+p + (y+1)*w*3] ;
             }
+            img[3*x+c + y*w*3] = COERCE(sum / 8192, 0, 65535);
         }
     }
-
-    for (int i = 0; i < w * h; i++)
-    {
-        out[i*3+c] = COERCE(aux[i*3+c] / 8192, 0, 65535);
-    }
-    
-    free(aux);
 }
 
 static void rgb_filters_debayer(uint16_t* img, const int filters[3][3][3][3])
