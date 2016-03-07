@@ -20,7 +20,7 @@ ffmpeg -i T083.mov -vf "decimate=2" frame%05d.ppm
 # - for linear sRGB output, drop the --ufraw-gamma
 # - for "raw" output (without LUT/matrix), remove the LUT file
 # - tip: --exposure is linear, and --soft-film compresses highlights without clipping
-hdmi4k frame*[0-9].ppm --ufraw-gamma --soft-film=1 --fixrnt --offset=500
+hdmi4k frame*[0-9].ppm --ufraw-gamma --soft-film=1.5 --fixrnt --offset=500
 
 # problem: avisynth doesn't read 16-bit PPM
 rename 's/-out.ppm/.tif/' *
