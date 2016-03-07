@@ -9,9 +9,9 @@ rm frame*
 # - input should be a .mov file transcoded from Shogun with ffmpeg -vcodec copy (not directly!)
 # - that's because I've designed the HDMI recovery filters on transcoded output 
 #   which is - surprise! - not identical (yes, with -vcodec copy; ffmpeg bug?)
-ffmpeg -i T083.mov -vf "decimate=2" frame%03d.ppm
+ffmpeg -i T083.mov -vf "decimate=2" frame%05d.ppm
 
-# convert to 1080p output, ufraw-like look, apply some filters and fix row noise temporally
+# convert to 4K output, ufraw-like look, exposure compensation, fix row noise temporally
 # - you need to get calibration frames (darkframe-hdmi.ppm and lut-hdmi.spi1d) from:
 #     http://files.apertus.org/AXIOM-Beta/snapshots/calibration-frames/cam2/
 # - for some weird reasons, we get crushed blacks (I suspect the "black hole" effect)
@@ -19,8 +19,8 @@ ffmpeg -i T083.mov -vf "decimate=2" frame%03d.ppm
 # - output should be an approximation of sRGB (can't guarantee it is proper sRGB, I'm not troy_s :P )
 # - for linear sRGB output, drop the --ufraw-gamma
 # - for "raw" output (without LUT/matrix), remove the LUT file
-# - tip: --exposure uses film-like curves without highlight clipping
-hdmi4k frame*[0-9].ppm --1080pf --cs --ufraw-gamma --exposure=1 --fixrnt --offset=500
+# - tip: --exposure is linear, and --soft-film compresses highlights without clipping
+hdmi4k frame*[0-9].ppm --ufraw-gamma --soft-film=1 --fixrnt --offset=500
 
 # problem: avisynth doesn't read 16-bit PPM
 rename 's/-out.ppm/.tif/' *
