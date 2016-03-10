@@ -184,9 +184,10 @@ void fix_column_noise(int16_t * original, int16_t * denoised, int w, int h)
             int noise_val = noise[x + y*w];
 
             mask[x + y*w] =
-                (hgradient > 2000) ||       /* mask out pixels on a strong edge, that is clearly not pattern noise */
+                (hgradient > 5000) ||       /* mask out pixels on a strong edge, that is clearly not pattern noise */
                 (pixel > 20000) ||          /* mask out very bright pixels */
-                (ABS(noise_val) > 1000);    /* mask out values that are clearly not noise */
+                (ABS(noise_val) > 2000) ||  /* mask out values that are clearly not noise */
+                noise_val == 0;             /* hack: figure out why does this appear to give much better results, and whether there are side effects */
         }
     }
 
