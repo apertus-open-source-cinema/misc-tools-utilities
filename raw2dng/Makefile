@@ -6,3 +6,6 @@ clean:
 
 dng2raw: dng2raw.c
 	gcc dng2raw.c -m32 -O2 -Wall -o dng2raw
+
+install: raw2dng
+	cp raw2dng /usr/local/bin
