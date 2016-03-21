@@ -1008,8 +1008,11 @@ static void calc_avgframe_addframe(struct raw_info * raw_info, int16_t * raw16, 
 
     /* find offset */
     int offsets[4];
-    int avg_offset;
-    calc_black_columns_offset(raw_info, raw16, offsets, &avg_offset);
+    int avg_offset = 0;
+    if (!no_blackcol)
+    {
+        calc_black_columns_offset(raw_info, raw16, offsets, &avg_offset);
+    }
 
     /* add current frame to accumulator */
     for (int i = 0; i < n; i++)
@@ -1232,8 +1235,11 @@ static void calc_linfitframes_addframe(struct raw_info * raw_info, int16_t * raw
 
     /* find offset */
     int offsets[4];
-    int avg_offset;
-    calc_black_columns_offset(raw_info, raw16, offsets, &avg_offset);
+    int avg_offset = 0;
+    if (!no_blackcol)
+    {
+        calc_black_columns_offset(raw_info, raw16, offsets, &avg_offset);
+    }
 
     /* add current frame to accumulators */
     L.mx += meta_expo;
