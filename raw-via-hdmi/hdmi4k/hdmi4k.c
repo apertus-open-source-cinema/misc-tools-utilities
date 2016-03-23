@@ -159,6 +159,37 @@ static int file_exists_warn(char * filename)
     return ans;
 }
 
+static void convert_to_linear(uint16_t * raw, int w, int h)
+{
+    double gamma = 0.52;
+    double gain = 0.85;
+    double offset = 55;
+    
+    int* lut = malloc(0x10000 * sizeof(lut[0]));
+    
+    for (int i = 0; i < 0x10000; i++)
+    {
+        double data = i / 65535.0;
+        
+        /* undo HDMI 16-235 scaling */
+        data = data * (235.0 - 16.0) / 255.0 + 16.0 / 255.0;
+        
+        /* undo gamma applied from our camera, before recording */
+        data = pow(data, 1/gamma);
+        
+        /* scale the (now linear) values to cover the full 12-bit range,
+         * with a black level of 128 */
+        lut[i] = COERCE(data * 4095 / gain + 128 - offset, 0, 4095);
+    }
+    
+    for (int i = 0; i < w * h; i++)
+    {
+        raw[i] = lut[raw[i]];
+    }
+    
+    free(lut);
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 1)
@@ -233,12 +264,15 @@ int main(int argc, char** argv)
             for (int x = 0; x < width; x++)
             {
                 /* green1 from B, green2 from A, red/blue from B */
-                raw[2*x   + (2*y  ) * (2*width)] = rgbB[3*x+1 + y*width*3] / 16;
-                raw[2*x+1 + (2*y+1) * (2*width)] = rgbA[3*x+1 + y*width*3] / 16;
-                raw[2*x   + (2*y+1) * (2*width)] = rgbB[3*x   + y*width*3] / 16;
-                raw[2*x+1 + (2*y  ) * (2*width)] = rgbB[3*x+2 + y*width*3] / 16;
+                raw[2*x   + (2*y  ) * (2*width)] = rgbB[3*x+1 + y*width*3];
+                raw[2*x+1 + (2*y+1) * (2*width)] = rgbA[3*x+1 + y*width*3];
+                raw[2*x   + (2*y+1) * (2*width)] = rgbB[3*x   + y*width*3];
+                raw[2*x+1 + (2*y  ) * (2*width)] = rgbB[3*x+2 + y*width*3];
             }
         }
+        
+        printf("Convert to linear...\n");
+        convert_to_linear(raw, 2*width, 2*height);
         
         printf("Output file : %s\n", out_filename);
         write_pgm(out_filename, raw, 2*width, 2*height);
