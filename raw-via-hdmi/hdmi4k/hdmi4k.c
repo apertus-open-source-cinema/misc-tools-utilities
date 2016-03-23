@@ -163,7 +163,7 @@ static void convert_to_linear(uint16_t * raw, int w, int h)
 {
     double gamma = 0.52;
     double gain = 0.85;
-    double offset = 55;
+    double offset = 45;
     
     int* lut = malloc(0x10000 * sizeof(lut[0]));
     
@@ -188,6 +188,468 @@ static void convert_to_linear(uint16_t * raw, int w, int h)
     }
     
     free(lut);
+}
+
+/**
+ * Filters to recover Bayer channels (R,G1,G2,B) from two HDMI frames:
+ * rgbA: R,G1,B
+ * rgbB: R',G2,B' (delayed by 1 stop)
+ * 
+ * The exact placement of pixels might differ.
+ * The filters will take care of any differences that may appear,
+ * for example, the line swapping bug, which is still present - ping Herbert.
+ * 
+ * The black box (recorder or ffmpeg or maybe both) also applies a color matrix
+ * to the raw data, which will be undone by these filters as well.
+ * 
+ * These filters were designed to be applied before linearization,
+ * on Shogun footage transcoded with ffmpeg -vcodec copy 
+ * (output is different with unprocessed MOVs - ffmpeg bug?)
+ * 
+ * Indices:
+ *  - Bayer channel: x%2 + 2*(y%2),
+ *  - column parity in the HDMI image: (x/2) % 2,
+ *  - HDMI frame parity (A,B),
+ *  - predictor channel (R,G,B),
+ *  - filter kernel indices (i,j).
+ */
+const int filters[4][2][2][3][3][3] = {
+  /* Red: */
+  [2] = {
+    /* even columns: */
+    {
+      /* from frame A: */
+      {
+        /* from red (sum=0.08): */
+        {
+          {    464,  -524,  -122 },
+          {   -326,   951,   387 },
+          {   -104,    21,   -83 },
+        },
+        /* from green (sum=0.00): */
+        {
+          {  -8348,  8083,   -79 },
+          {   4527, -3959,   230 },
+          {  -3018,  2623,   -30 },
+        },
+        /* from blue (sum=-0.03): */
+        {
+          {   7664, -7586,   -30 },
+          {  -3884,  3730,    18 },
+          {   2734, -2820,   -44 },
+        },
+      },
+      /* from frame B: */
+      {
+        /* from red (sum=1.01): */
+        {
+          {   9398, -8421,   -99 },
+          {   1177,  5070,   266 },
+          {  -3032,  3936,   -42 },
+        },
+        /* from green (sum=-0.08): */
+        {
+          {  -9194,  8993,   -11 },
+          {  -1766,  1417,   -21 },
+          {   2541, -2394,  -190 },
+        },
+        /* from blue (sum=0.01): */
+        {
+          {   -347,   259,    90 },
+          {    802,  -711,   -37 },
+          {    498,  -359,   -93 },
+        },
+      },
+    },
+    /* odd columns: */
+    {
+      /* from frame A: */
+      {
+        /* from red (sum=0.84): */
+        {
+          {   -165,  -194,   866 },
+          {    192,   263,  5460 },
+          {   -149,   -32,   654 },
+        },
+        /* from green (sum=-0.12): */
+        {
+          {   -221,  5416, -5716 },
+          {    263, 13406,-13528 },
+          {   -175, -3649,  3261 },
+        },
+        /* from blue (sum=-0.01): */
+        {
+          {     44, -5604,  5608 },
+          {     43,-13116, 12935 },
+          {    -85,  3325, -3198 },
+        },
+      },
+      /* from frame B: */
+      {
+        /* from red (sum=0.25): */
+        {
+          {    215, -2989,  2957 },
+          {    526,  8633, -7560 },
+          {    144,  1149, -1040 },
+        },
+        /* from green (sum=0.04): */
+        {
+          {     29,  2515, -2704 },
+          {   -353, -7354,  8103 },
+          {    -62,  -601,   763 },
+        },
+        /* from blue (sum=-0.01): */
+        {
+          {     -1,   256,  -216 },
+          {    -76,   -43,   -64 },
+          {     21,  -276,   332 },
+        },
+      },
+    },
+  },
+  /* Green1: */
+  [3] = {
+    /* even columns: */
+    {
+      /* from frame A: */
+      {
+        /* from red (sum=0.07): */
+        {
+          {     65,     4,   -66 },
+          {    590,  -145,   169 },
+          {   -257,   335,  -110 },
+        },
+        /* from green (sum=0.75): */
+        {
+          {   5358, -5380,  -148 },
+          {  -3296,  9438,   248 },
+          {   -291,   344,  -118 },
+        },
+        /* from blue (sum=0.15): */
+        {
+          {  -5643,  5667,   -59 },
+          {   3132, -2045,   105 },
+          {    366,  -371,   101 },
+        },
+      },
+      /* from frame B: */
+      {
+        /* from red (sum=0.03): */
+        {
+          {   -359,   326,   -96 },
+          {  -6351,  6546,   148 },
+          {   3276, -3338,    58 },
+        },
+        /* from green (sum=0.09): */
+        {
+          {    524,  -416,    40 },
+          {   6370, -6356,   287 },
+          {  -3268,  3512,    85 },
+        },
+        /* from blue (sum=-0.10): */
+        {
+          {   -236,   128,    31 },
+          {   -493,     3,   -92 },
+          {   -128,    82,   -73 },
+        },
+      },
+    },
+    /* odd columns: */
+    {
+      /* from frame A: */
+      {
+        /* from red (sum=0.33): */
+        {
+          {      3,  -212,   158 },
+          {   -100, -1503,  4434 },
+          {     63,  -172,    35 },
+        },
+        /* from green (sum=0.73): */
+        {
+          {    -16,  5670, -5584 },
+          {    217, 20874,-15239 },
+          {    -30, -3319,  3400 },
+        },
+        /* from blue (sum=-0.01): */
+        {
+          {     22, -4978,  5059 },
+          {    140,-11578, 11114 },
+          {    -23,  3964, -3788 },
+        },
+      },
+      /* from frame B: */
+      {
+        /* from red (sum=-0.23): */
+        {
+          {   -316,  7759, -7823 },
+          {  -1557,  4812, -4535 },
+          {   -340,   197,  -104 },
+        },
+        /* from green (sum=0.12): */
+        {
+          {     38, -7236,  7264 },
+          {    107, -4937,  5463 },
+          {   -133,  -218,   607 },
+        },
+        /* from blue (sum=0.07): */
+        {
+          {     -4,  -473,   467 },
+          {     98,   673,  -390 },
+          {    -25,   603,  -404 },
+        },
+      },
+    },
+  },
+  /* Green2: */
+  [0] = {
+    /* even columns: */
+    {
+      /* from frame A: */
+      {
+        /* from red (sum=-0.02): */
+        {
+          {     17,   -87,   -27 },
+          {   -463,   497,   -26 },
+          {    189,  -221,    -3 },
+        },
+        /* from green (sum=0.05): */
+        {
+          {  -2549,  2702,   -73 },
+          {   -277,   537,    40 },
+          {   3950, -3976,    47 },
+        },
+        /* from blue (sum=-0.08): */
+        {
+          {   2540, -2501,  -130 },
+          {    881,  -987,  -292 },
+          {  -4222,  4176,  -153 },
+        },
+      },
+      /* from frame B: */
+      {
+        /* from red (sum=0.11): */
+        {
+          {    532,  -295,   -48 },
+          {   3374, -2774,    35 },
+          { -10387, 10458,    16 },
+        },
+        /* from green (sum=0.80): */
+        {
+          {   -515,   645,   -56 },
+          {  -4905, 11107,   190 },
+          {  10386,-10213,  -100 },
+        },
+        /* from blue (sum=0.14): */
+        {
+          {   -178,    95,   -34 },
+          {   2130,  -686,   -29 },
+          {   -161,   121,   -88 },
+        },
+      },
+    },
+    /* odd columns: */
+    {
+      /* from frame A: */
+      {
+        /* from red (sum=-0.18): */
+        {
+          {     -8,  -360,   355 },
+          {   -113,   361, -1594 },
+          {    138,    51,  -302 },
+        },
+        /* from green (sum=0.09): */
+        {
+          {     85,  8568, -8264 },
+          {    128, -9194,  9167 },
+          {     49, -1701,  1878 },
+        },
+        /* from blue (sum=0.04): */
+        {
+          {     32, -7766,  7688 },
+          {     79,  9079, -8702 },
+          {    -74,  1793, -1796 },
+        },
+      },
+      /* from frame B: */
+      {
+        /* from red (sum=0.27): */
+        {
+          {   -243, 14363,-14345 },
+          {    -68,   685,  2031 },
+          {   -133, -2819,  2781 },
+        },
+        /* from green (sum=0.76): */
+        {
+          {    -80,-14095, 14148 },
+          {    375,  8186, -2135 },
+          {   -163,  3080, -3086 },
+        },
+        /* from blue (sum=0.02): */
+        {
+          {    -33,   157,   -43 },
+          {      9,  -589,   554 },
+          {    -19,    66,    52 },
+        },
+      },
+    },
+  },
+  /* Blue: */
+  [1] = {
+    /* even columns: */
+    {
+      /* from frame A: */
+      {
+        /* from red (sum=0.00): */
+        {
+          {    567,  -577,   174 },
+          {    114,   -44,  -384 },
+          {    -72,   260,   -16 },
+        },
+        /* from green (sum=-0.03): */
+        {
+          {    617,  -393,   -14 },
+          {   8087, -7671,  -710 },
+          {    741,  -868,   -47 },
+        },
+        /* from blue (sum=0.81): */
+        {
+          {  -1344,  1352,   647 },
+          {  -7923,  8321,  4918 },
+          {   -735,   608,   793 },
+        },
+      },
+      /* from frame B: */
+      {
+        /* from red (sum=-0.02): */
+        {
+          {  -3509,  3389,   -38 },
+          {  -2787,  2812,   167 },
+          {  14593,-14702,   -61 },
+        },
+        /* from green (sum=0.00): */
+        {
+          {   3399, -3717,  -259 },
+          {   2445, -2093,   651 },
+          { -14566, 14225,   -60 },
+        },
+        /* from blue (sum=0.23): */
+        {
+          {    174,  -115,    85 },
+          {    566,   104,   707 },
+          {    -48,   133,   312 },
+        },
+      },
+    },
+    /* odd columns: */
+    {
+      /* from frame A: */
+      {
+        /* from red (sum=0.06): */
+        {
+          {    -51,  -155,   410 },
+          {     -8,  -281,   496 },
+          {     91,   223,  -236 },
+        },
+        /* from green (sum=0.04): */
+        {
+          {    -29,  -688,  1069 },
+          {    -60,  1345, -1225 },
+          {     18, -1678,  1589 },
+        },
+        /* from blue (sum=0.13): */
+        {
+          {    -63,  1469, -1389 },
+          {    197,  -240,   956 },
+          {   -116,  1615, -1395 },
+        },
+      },
+      /* from frame B: */
+      {
+        /* from red (sum=-0.08): */
+        {
+          {   -183,  6555, -6596 },
+          {    -85, -4934,  4731 },
+          {     20, -5176,  5053 },
+        },
+        /* from green (sum=-0.07): */
+        {
+          {    -11, -6824,  6288 },
+          {     24,  3998, -3497 },
+          {   -126,  5238, -5642 },
+        },
+        /* from blue (sum=0.92): */
+        {
+          {   -113,   850,   -39 },
+          {    211,  6028,  -225 },
+          {   -107,   710,   194 },
+        },
+      },
+    },
+  },
+};
+
+static void recover_bayer_channel(int dx, int dy)
+{
+    int ch = dx%2 + (dy%2) * 2;
+    int w = width;
+    int h = height;
+    
+    uint16_t* rgb[2] = {rgbA, rgbB};
+
+    for (int y = 1; y < h-1; y++)
+    {
+        for (int x = 1; x < w-1; x++)
+        {
+            int sum = 0;
+
+            /* separate filter for even/odd columns */
+            int c = !(x % 2);
+
+            /* we recover each channel from two frames: A and B */
+            for (int k = 0; k < 2; k++)
+            {
+                /* for each channel, we have 3 predictors from each frame */
+                for (int p = 0; p < 3; p++)
+                {
+                    #define filter filters[ch][c][k][p]
+                    
+                    sum +=
+                        filter[0][0] * rgb[k][(x-1)*3+p + (y-1)*w*3] + filter[0][1] * rgb[k][x*3+p + (y-1)*w*3] + filter[0][2] * rgb[k][(x+1)*3+p + (y-1)*w*3] +
+                        filter[1][0] * rgb[k][(x-1)*3+p + (y+0)*w*3] + filter[1][1] * rgb[k][x*3+p + (y+0)*w*3] + filter[1][2] * rgb[k][(x+1)*3+p + (y+0)*w*3] +
+                        filter[2][0] * rgb[k][(x-1)*3+p + (y+1)*w*3] + filter[2][1] * rgb[k][x*3+p + (y+1)*w*3] + filter[2][2] * rgb[k][(x+1)*3+p + (y+1)*w*3] ;
+                    
+                    #undef filter
+                }
+            }
+
+            raw[2*x+dx + (2*y+dy) * (2*width)] = COERCE(sum / 8192, 0, 65535);
+        }
+    }
+}
+
+/* recover raw data by filtering the two HDMI frames: rgbA and rgbB */
+static void recover_raw_data()
+{
+    recover_bayer_channel(0,0);
+    recover_bayer_channel(0,1);
+    recover_bayer_channel(1,0);
+    recover_bayer_channel(1,1);
+
+    /* fill border pixels */
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            if (x == 0 || y == 0 || x == width-1 || y == height-1)
+            {
+                /* green1 from B, green2 from A, red/blue from B */
+                raw[2*x   + (2*y  ) * (2*width)] = rgbB[3*x+1 + y*width*3];
+                raw[2*x+1 + (2*y+1) * (2*width)] = rgbA[3*x+1 + y*width*3];
+                raw[2*x   + (2*y+1) * (2*width)] = rgbB[3*x   + y*width*3];
+                raw[2*x+1 + (2*y  ) * (2*width)] = rgbB[3*x+2 + y*width*3];
+            }
+        }
+    }
 }
 
 int main(int argc, char** argv)
@@ -258,18 +720,8 @@ int main(int argc, char** argv)
             continue;
         }
         
-        /* copy input data to output, just to check the basics */
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                /* green1 from B, green2 from A, red/blue from B */
-                raw[2*x   + (2*y  ) * (2*width)] = rgbB[3*x+1 + y*width*3];
-                raw[2*x+1 + (2*y+1) * (2*width)] = rgbA[3*x+1 + y*width*3];
-                raw[2*x   + (2*y+1) * (2*width)] = rgbB[3*x   + y*width*3];
-                raw[2*x+1 + (2*y  ) * (2*width)] = rgbB[3*x+2 + y*width*3];
-            }
-        }
+        printf("Recovering raw data...\n");
+        recover_raw_data();
         
         printf("Convert to linear...\n");
         convert_to_linear(raw, 2*width, 2*height);
