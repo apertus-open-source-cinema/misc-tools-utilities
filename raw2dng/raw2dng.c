@@ -1496,96 +1496,6 @@ static int endswith(char* str, char* suffix)
     return 0;
 }
 
-static void reverse_hdmi_curves(struct raw_info * raw_info, int16_t * raw16)
-{
-    printf("Reversing curves...\n");
-    int w = raw_info->width;
-    int h = raw_info->height;
-
-    /* GBRG */
-    double P[4][3] = {
-        { 0.02814, 0.3022, 4.381 },
-        { 0.02595, 0.3504, 3.856 },
-        { 0.02468, 0.3731, 3.768 },
-        { 0.02814, 0.3022, 4.381 },
-    };
-    for (int y = 0; y < h; y++)
-    {
-        for (int x = 0; x < w; x++)
-        {
-            int k = (x%2) + (y%2)*2;
-            double p = raw16[x + y*w] / 32768.0;
-            p = log2(p*p * 4095);
-            p = P[k][0] * p*p + P[k][1] * p + P[k][2];
-            raw16[x + y*w] = pow(2,p) * 8;
-        }
-    }
-}
-
-/* 16-bit ppm, for input data coming from HDMI recorders */
-/* raw16 is allocated by us */
-static void read_ppm(char* filename, struct raw_info * raw_info, int16_t ** praw16)
-{
-    FILE* fp = fopen(filename, "rb");
-    CHECK(fp, "could not open %s", filename);
-
-    /* PGM read code from dcraw, adapted for PPM */
-    int dim[3]={0,0,0}, comment=0, number=0, error=0, nd=0, c;
-
-      if (fgetc(fp) != 'P' || fgetc(fp) != '6') error = 1;
-      while (!error && nd < 3 && (c = fgetc(fp)) != EOF) {
-        if (c == '#')  comment = 1;
-        if (c == '\n') comment = 0;
-        if (comment) continue;
-        if (isdigit(c)) number = 1;
-        if (number) {
-          if (isdigit(c)) dim[nd] = dim[nd]*10 + c -'0';
-          else if (isspace(c)) {
-        number = 0;  nd++;
-          } else error = 1;
-        }
-      }
-    
-    CHECK(!(error || nd < 3), "not a valid PGM file\n");
-
-    int width = dim[0];
-    int height = dim[1];
-    
-    raw_info->width = width * 2;
-    raw_info->height = height * 2;
-
-    /* allocate memory for the PPM data (RGB48) and for the Bayer raw16 data (double resolution) */
-    CHECK(praw16 && !*praw16, "raw16");
-    uint16_t * ppm = malloc(width * height * 2 * 3);
-    *praw16 = malloc(raw_info->width * raw_info->height * 2);
-    int16_t * raw16 = *praw16;
-    
-    int size = fread(ppm, 1, width * height * 2 * 3, fp);
-    CHECK(size == width * height * 2 * 3, "fread");
-    fclose(fp);
-    
-    /* PGM is big endian, need to reverse it */
-    reverse_bytes_order((void*)ppm, width * height * 2 * 3);
-    
-    /* now copy the RGB data from PPM into raw16 Bayer buffer (duplicate green) */
-    for (int y = 0; y < height; y++)
-    {
-        for (int x = 0; x < width; x++)
-        {
-            int r = ppm[x*3   + y*width*3] / 2;
-            int g = ppm[x*3+1 + y*width*3] / 2;
-            int b = ppm[x*3+2 + y*width*3] / 2;
-            raw16[2*x   +  2*y    * 2*width] = g;
-            raw16[2*x+1 +  2*y    * 2*width] = b;
-            raw16[2*x   + (2*y+1) * 2*width] = r;
-            raw16[2*x+1 + (2*y+1) * 2*width] = g;
-        }
-    }
-    
-    /* PPM data no longer needed, raw16 will be freed later */
-    free(ppm);
-}
-
 /* 16-bit pgm, Bayer GBRG, for testing purposes (e.g. saved from octave) */
 static void read_pgm(char* filename, struct raw_info * raw_info, int16_t ** praw16)
 {
@@ -1735,24 +1645,6 @@ int main(int argc, char** argv)
             read_pgm(argv[k], &raw_info, &raw16);
             image_width = raw_info.width;
             image_height = raw_info.height;
-        }
-        else if (endswith(argv[k], ".ppm"))
-        {
-            fi = fopen(argv[k], "rb");
-            CHECK(fi, "could not open %s", argv[k]);
-
-            /* replace input file extension with .DNG */
-            static char fo[256];
-            change_ext(argv[k], fo, ".DNG", sizeof(fo));
-            out_filename = fo;
-            
-            /* read PPM data assuming it's 16-bit data from HDMI */
-            printf("Assuming HDMI image\n");
-            read_ppm(argv[k], &raw_info, &raw16);
-            reverse_hdmi_curves(&raw_info, raw16);
-            image_width = raw_info.width;
-            image_height = raw_info.height;
-            no_blackcol = 1;
         }
         else if (endswith(argv[k], ".dng") || endswith(argv[k], ".DNG"))
         {
