@@ -791,15 +791,14 @@ int main(int argc, char** argv)
         if (argv[k][0] == '-')
             continue;
 
-        char* out_filename;
+        char out_filename[256];
 
         fprintf(stderr, "\n%s\n", argv[k]);
         
         if (endswith(argv[k], ".mov") || endswith(argv[k], ".MOV"))
         {
-            static char fo[256];
             static char fi[256];
-            static int fc = 0;
+            static int frame_count = 1;
 
             if (!pipe)
             {
@@ -841,8 +840,7 @@ int main(int argc, char** argv)
             }
 
             change_ext(argv[k], fi, "", sizeof(fi));
-            snprintf(fo, sizeof(fo), "%s-%05d.pgm", fi, fc++);
-            out_filename = fo;
+            snprintf(out_filename, sizeof(out_filename), "%s-%05d.pgm", fi, frame_count++);
 
             /* this may leave rgbA allocated (memory leak),
              * but since the program will exit right away, it's not a huge deal */
