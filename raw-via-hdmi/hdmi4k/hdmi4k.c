@@ -44,8 +44,15 @@ uint16_t* darkA;
 uint16_t* darkB;
 uint16_t* dark;
 
+int check_only = 0;
 
 struct cmd_group options[] = {
+    {
+        "Options", (struct cmd_option[]) {
+            { &check_only,      1,          "--check-only",  "Only check the frame order (no output)" },
+            OPTION_EOL,
+        },
+    },
     OPTION_GROUP_EOL
 };
 
@@ -206,8 +213,9 @@ static void darkframe_subtract(uint16_t* raw, uint16_t* dark, int w, int h)
 
 /**
  * Filters to recover Bayer channels (R,G1,G2,B) from two HDMI frames:
- * rgbA: R,G1,B
- * rgbB: R',G2,B' (delayed by 1 stop)
+ * rgbA: R, G1, B
+ * rgbB: R',G2, B'
+ * ' = delayed by 1 pixel
  * 
  * The exact placement of pixels might differ.
  * The filters will take care of any differences that may appear,
@@ -666,6 +674,52 @@ static void recover_raw_data(uint16_t* raw, uint16_t* rgbA, uint16_t* rgbB)
     }
 }
 
+/* return: 1 = ok, -1 = retry */
+int check_frame_order(uint16_t* rgbA, uint16_t* rgbB, uint16_t* rgbC, int k)
+{
+    /*
+     * rgbA: R, G1, B
+     * rgbB: R',G2, B'
+     * ' = delayed by 1 pixel
+     * 
+     * They may be reversed, so we will try to autodetect
+     * which frame is A and which is B, from the first 3 frames.
+     * 
+     * We will check the difference between frames 1-2 and 2-3.
+     */
+
+    int n = width * height * 3;
+    int64_t ab = 0;
+    int64_t bc = 0;
+    int64_t ac = 0;
+    for (int i = 0; i < n; i++)
+    {
+        ab += ABS((int) rgbA[i] - rgbB[i]);
+        bc += ABS((int) rgbB[i] - rgbC[i]);
+        ac += ABS((int) rgbA[i] - rgbC[i]);
+    }
+    
+    if (ab == 0 || bc == 0 || ac == 0)
+    {
+        int a = (bc == 0) ? 1 : 0;
+        int b = (ab == 0) ? 1 : 2;
+        printf("Frames %d and %d are identical\n", a+k, b+k);
+        return -1;
+    }
+        
+    printf("Frame deltas : %.3g, %.3g\n", (double) ab, (double) bc);
+    
+    if (ab > bc)
+    {
+        printf("ERROR: frame pairs do not match.\n");
+        printf("Try skipping one frame in ffmpeg:\n");
+        printf("-ss 00.016 on A frames, -ss 00.032 on B frames\n");
+        exit(2);
+    }
+    
+    return 1;
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 1)
@@ -696,7 +750,7 @@ int main(int argc, char** argv)
 
     char* dark_filename_a = "darkframe-hdmi-A.ppm";
     char* dark_filename_b = "darkframe-hdmi-B.ppm";
-    if (file_exists_warn(dark_filename_a) && file_exists_warn(dark_filename_b))
+    if (!check_only && file_exists_warn(dark_filename_a) && file_exists_warn(dark_filename_b))
     {
         printf("Dark frames : darkframe-hdmi-[AB].ppm\n");
         read_ppm(dark_filename_a, &darkA);
@@ -706,6 +760,8 @@ int main(int argc, char** argv)
         recover_raw_data(dark, darkA, darkB);
         convert_to_linear(dark, 2*width, 2*height);
     }
+    
+    int check_frame = 1;
     
     /* all other arguments are input or output files */
     for (int k = 1; k < argc; k++)
@@ -730,6 +786,25 @@ int main(int argc, char** argv)
             argv[k][len] = 'B';
             read_ppm(argv[k], &rgbB);
             raw = malloc(width * height * 4 * sizeof(raw[0]));
+            
+            if (check_frame)
+            {
+                if (k+1 < argc)
+                {
+                    uint16_t* rgbC = 0;
+                    read_ppm(argv[k+1], &rgbC);
+                    if (check_frame_order(rgbA, rgbB, rgbC, k) == 1 && !check_only)
+                    {
+                        /* check successful, assume next frames are OK */
+                        check_frame = 0;
+                    }
+                    free(rgbC);
+                }
+                else
+                {
+                    printf("Need 2 frame pairs to check frame type (A or B).\n");
+                }
+            }
         }
         else if (endswith(argv[k], "B.ppm"))
         {
@@ -747,6 +822,11 @@ int main(int argc, char** argv)
             continue;
         }
         
+        if (check_only)
+        {
+            goto cleanup;
+        }
+        
         printf("Recovering raw data...\n");
         recover_raw_data(raw, rgbA, rgbB);
         
@@ -762,6 +842,7 @@ int main(int argc, char** argv)
         printf("Output file : %s\n", out_filename);
         write_pgm(out_filename, raw, 2*width, 2*height);
 
+cleanup:
         free(rgbA); rgbA = 0;
         free(rgbB); rgbB = 0;
         free(raw);  raw = 0;
