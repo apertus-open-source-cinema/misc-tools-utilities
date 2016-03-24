@@ -1,11 +1,9 @@
 # argument: mov file
 
 # careful here
-rm *-[0-9][0-9][0-9][0-9][0-9].pgm *-[0-9][0-9][0-9][0-9][0-9].DNG
+rm frame*.dng
 
-hdmi4k $1
-raw2dng *.pgm
+hdmi4k $1 - | raw2dng --pgm frame%05d.dng
 
 # todo:
 # - temporal row noise correction
-# - piping output to raw2dng
