@@ -1499,12 +1499,12 @@ static int endswith(char* str, char* suffix)
 }
 
 /* 16-bit pgm, Bayer GBRG, for testing purposes (e.g. saved from octave) */
-static void read_pgm_stream(FILE* fp, struct raw_info * raw_info, int16_t ** praw16)
+static int read_pgm_stream(FILE* fp, struct raw_info * raw_info, int16_t ** praw16)
 {
     /* PGM read code from dcraw */
-    int dim[3]={0,0,0}, comment=0, number=0, error=0, nd=0, c;
+    int dim[3]={0,0,0}, comment=0, number=0, error=0, nd=0, c, fc;
 
-      if (fgetc(fp) != 'P' || fgetc(fp) != '5') error = 1;
+      if ((fc = fgetc(fp)) != 'P' || fgetc(fp) != '5') error = 1;
       while (!error && nd < 3 && (c = fgetc(fp)) != EOF) {
         if (c == '#')  comment = 1;
         if (c == '\n') comment = 0;
@@ -1517,7 +1517,13 @@ static void read_pgm_stream(FILE* fp, struct raw_info * raw_info, int16_t ** pra
           } else error = 1;
         }
       }
-    
+
+    if (fc == EOF)
+    {
+        fprintf(stderr, "End of file.\n");
+        return 0;
+    }
+
     CHECK(!(error || nd < 3), "not a valid PGM file\n");
 
     int width = dim[0];
@@ -1543,6 +1549,8 @@ static void read_pgm_stream(FILE* fp, struct raw_info * raw_info, int16_t ** pra
     {
         raw16[i] *= 8;
     }
+    
+    return 1;
 }
 
 static void read_pgm(char* filename, struct raw_info * raw_info, int16_t ** praw16)
@@ -1625,7 +1633,7 @@ int main(int argc, char** argv)
             continue;
         
         FILE* fi;
-        char* out_filename;
+        char out_filename[256];
         int16_t * raw16 = 0;
 
         printf("\n%s\n", argv[k]);
@@ -1636,9 +1644,7 @@ int main(int argc, char** argv)
             CHECK(fi, "could not open %s", argv[k]);
 
             /* replace input file extension with .DNG */
-            static char fo[256];
-            change_ext(argv[k], fo, ".DNG", sizeof(fo));
-            out_filename = fo;
+            change_ext(argv[k], out_filename, ".DNG", sizeof(out_filename));
         }
         else if (endswith(argv[k], ".pgm"))
         {
@@ -1646,19 +1652,26 @@ int main(int argc, char** argv)
             CHECK(fi, "could not open %s", argv[k]);
 
             /* replace input file extension with .DNG */
-            static char fo[256];
-            change_ext(argv[k], fo, ".DNG", sizeof(fo));
-            out_filename = fo;
+            change_ext(argv[k], out_filename, ".DNG", sizeof(out_filename));
             
-            /* read PGM data assuming it's raw16 */
-            read_pgm(argv[k], &raw_info, &raw16);
-            image_width = raw_info.width;
-            image_height = raw_info.height;
+            pgm_input = 1;
         }
         else if (endswith(argv[k], ".dng") || endswith(argv[k], ".DNG"))
         {
             fi = stdin;
-            out_filename = argv[k];
+            /* fixme: can be abused */
+            if (strchr(argv[k], '%'))
+            {
+                static int frame_count = 1;
+                snprintf(out_filename, sizeof(out_filename), argv[k], frame_count++);
+                
+                /* process the same argument at next iteration */
+                k--;
+            }
+            else
+            {
+                snprintf(out_filename, sizeof(out_filename), "%s", argv[k]);
+            }
             if (!image_height) image_height = 3072;
         }
         else
@@ -1670,7 +1683,10 @@ int main(int argc, char** argv)
         if (pgm_input)
         {
             printf("PGM input...\n");
-            read_pgm_stream(fi, &raw_info, &raw16);
+            if (!read_pgm_stream(fi, &raw_info, &raw16))
+            {
+                break;
+            }
             image_width = raw_info.width;
             image_height = raw_info.height;
         }
@@ -1966,7 +1982,7 @@ save_output:
         save_dng(out_filename, &raw_info);
 
 cleanup:
-        fclose(fi);
+        if (fi != stdin) fclose(fi);
         free(raw_info.buffer); raw_info.buffer = 0;
     }
     
