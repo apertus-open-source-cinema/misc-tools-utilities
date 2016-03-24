@@ -190,9 +190,11 @@ static void fix_column_noise(int16_t * original, int16_t * denoised, int w, int 
         {
             int pixel = original[x + y*w];
             int hgradient = abs(hgrad[x + y*w]);
+            int noise_val = noise[x + y*w];
 
             mask[x + y*w] = 
-                (hgradient > 200) ||   /* mask out pixels on a strong edge, that is clearly not pattern noise */
+                (noise_val == 0)  ||    /* hack: figure out why does this appear to give much better results, and whether there are side effects */
+                (hgradient > 500) ||    /* mask out pixels on a strong edge, that is clearly not pattern noise */
                 (nonlinear_highlights ? /* row noise is very different in nonlinear (nearly clipped) highlights, compared to the rest of the image */
                        pixel <= clip_thr : /* NL highlights: mask out normally-exposed areas */ 
                        pixel > clip_thr ); /* regular image: mask out nearly-overexposed pixels */
