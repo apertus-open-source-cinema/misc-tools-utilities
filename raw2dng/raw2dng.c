@@ -62,6 +62,7 @@ int image_width = 0;
 int image_height = 0;
 int swap_lines = 0;
 int hdmi_ramdump = 0;
+int pgm_input = 0;
 int use_lut = 0;
 int fixpn = 0;
 int fixpn_flags1 = 0;
@@ -102,6 +103,7 @@ struct cmd_group options[] = {
                              "                      - workaround for an old Beta bug" },
             { &hdmi_ramdump,   1,  "--hdmi",       "Assume the input is a memory dump\n"
                              "                      used for HDMI recording experiments" },
+            { &pgm_input,      1,  "--pgm",        "Expect 16-bit PGM input from stdin\n" },
             { &use_lut,        1,  "--lut",        "Use a 1D LUT (lut-xN.spi1d, N=gain, OCIO-like)\n" },
             { &no_processing,  1, "--totally-raw", "Copy the raw data without any manipulation\n"
                              "                      - metadata and pixel reordering are allowed." },
@@ -1497,11 +1499,8 @@ static int endswith(char* str, char* suffix)
 }
 
 /* 16-bit pgm, Bayer GBRG, for testing purposes (e.g. saved from octave) */
-static void read_pgm(char* filename, struct raw_info * raw_info, int16_t ** praw16)
+static void read_pgm_stream(FILE* fp, struct raw_info * raw_info, int16_t ** praw16)
 {
-    FILE* fp = fopen(filename, "rb");
-    CHECK(fp, "could not open %s", filename);
-
     /* PGM read code from dcraw */
     int dim[3]={0,0,0}, comment=0, number=0, error=0, nd=0, c;
 
@@ -1544,6 +1543,16 @@ static void read_pgm(char* filename, struct raw_info * raw_info, int16_t ** praw
     {
         raw16[i] *= 8;
     }
+}
+
+static void read_pgm(char* filename, struct raw_info * raw_info, int16_t ** praw16)
+{
+    FILE* fp = fopen(filename, "rb");
+    CHECK(fp, "could not open %s", filename);
+
+    read_pgm_stream(fp, raw_info, praw16);
+    
+    fclose(fp);
 }
 
 static void change_ext(char* old, char* new, char* newext, int maxsize)
@@ -1656,6 +1665,14 @@ int main(int argc, char** argv)
         {
             printf("Unknown file type.\n");
             continue;
+        }
+        
+        if (pgm_input)
+        {
+            printf("PGM input...\n");
+            read_pgm_stream(fi, &raw_info, &raw16);
+            image_width = raw_info.width;
+            image_height = raw_info.height;
         }
         
         int width = image_width ? image_width : hdmi_ramdump ? 1920*2 : 4096;
