@@ -1526,18 +1526,18 @@ static void read_pgm(char* filename, struct raw_info * raw_info, int16_t ** praw
     
     raw_info->width = width;
     raw_info->height = height;
+    int size = raw_info->width * raw_info->height * 2;
 
     /* allocate memory for Bayer raw16 data */
     CHECK(praw16 && !*praw16, "raw16");
-    *praw16 = malloc(raw_info->width * raw_info->height * 2);
+    *praw16 = malloc(size);
     int16_t * raw16 = *praw16;
     
-    int size = fread(raw16, 1, width * height * 2, fp);
-    CHECK(size == width * height * 2, "fread");
-    fclose(fp);
+    int r = fread(raw16, 1, size, fp);
+    CHECK(r == size, "fread");
     
     /* PGM is big endian, need to reverse it */
-    reverse_bytes_order((void*)raw16, width * height * 2);
+    reverse_bytes_order((void*)raw16, size);
     
     /* scale data by 8 */
     for (int i = 0; i < width * height; i++)
@@ -1689,13 +1689,16 @@ int main(int argc, char** argv)
                 break;
         }
 
-        /* load the raw data and convert it to DNG */
-        char* raw = malloc(raw_info.frame_size);
-        CHECK(raw, "malloc");
+        /* raw12 data */
+        raw_info.buffer = malloc(raw_info.frame_size);
+        CHECK(raw_info.buffer, "malloc");
         
-        int r = fread(raw, 1, raw_info.frame_size, fi);
-        CHECK(r == raw_info.frame_size, "fread");
-        raw_info.buffer = raw;
+        /* if we already loaded raw16, skip reading raw12 */
+        if (!raw16)
+        {
+            int r = fread(raw_info.buffer, 1, raw_info.frame_size, fi);
+            CHECK(r == raw_info.frame_size, "fread");
+        }
 
         metadata_clear();
 
@@ -1947,7 +1950,7 @@ save_output:
 
 cleanup:
         fclose(fi);
-        free(raw); raw_info.buffer = 0;
+        free(raw_info.buffer); raw_info.buffer = 0;
     }
     
     if (calc_darkframe)
