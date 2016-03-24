@@ -132,7 +132,7 @@ static int read_ppm_stream(FILE* fp, uint16_t** prgb)
     
     if (fc == EOF)
     {
-        printf("End of file.\n");
+        fprintf(stderr, "End of file.\n");
         return 0;
     }
     
@@ -168,7 +168,7 @@ static void read_ppm(char* filename, uint16_t** prgb)
 /* caveat: it reverses bytes order in the buffer */
 static void write_pgm(char* filename, uint16_t * raw, int w, int h)
 {
-    printf("Writing %s...\n", filename);
+    fprintf(stderr, "Writing %s...\n", filename);
     FILE* f = fopen(filename, "wb");
     fprintf(f, "P5\n%d %d\n65535\n", w, h);
 
@@ -187,7 +187,7 @@ static int file_exists(char * filename)
 static int file_exists_warn(char * filename)
 {
     int ans = file_exists(filename);
-    if (!ans) printf("Not found   : %s\n", filename);
+    if (!ans) fprintf(stderr, "Not found   : %s\n", filename);
     return ans;
 }
 
@@ -722,15 +722,15 @@ int check_frame_order(uint16_t* rgbA, uint16_t* rgbB, uint16_t* rgbC, int k)
     {
         int a = (bc == 0) ? 1 : 0;
         int b = (ab == 0) ? 1 : 2;
-        printf("Frames %d and %d are identical (cannot check).\n", a+k, b+k);
+        fprintf(stderr, "Frames %d and %d are identical (cannot check).\n", a+k, b+k);
         return -1;
     }
         
-    printf("Frame deltas : %.3g, %.3g\n", (double) ab, (double) bc);
+    fprintf(stderr, "Frame deltas : %.3g, %.3g\n", (double) ab, (double) bc);
     
     if (ab > bc)
     {
-        printf("Frame pairs do not match.\n");
+        fprintf(stderr, "Frame pairs do not match.\n");
         return 0;
     }
     
@@ -741,16 +741,16 @@ int main(int argc, char** argv)
 {
     if (argc == 1)
     {
-        printf("HDMI RAW converter for Axiom BETA\n");
-        printf("\n");
-        printf("Usage:\n");
-        printf("  %s clip.mov\n", argv[0]);
-        printf("  raw2dng frame*.pgm [options]\n");
-        printf("\n");
-        printf("Calibration files:\n");
-        printf("  hdmi-darkframe-A.ppm, hdmi-darkframe-B.ppm:\n");
-        printf("  averaged dark frames from the HDMI recorder (even/odd frames)\n");
-        printf("\n");
+        fprintf(stderr, "HDMI RAW converter for Axiom BETA\n");
+        fprintf(stderr, "\n");
+        fprintf(stderr, "Usage:\n");
+        fprintf(stderr, "  %s clip.mov\n", argv[0]);
+        fprintf(stderr, "  raw2dng frame*.pgm [options]\n");
+        fprintf(stderr, "\n");
+        fprintf(stderr, "Calibration files:\n");
+        fprintf(stderr, "  hdmi-darkframe-A.ppm, hdmi-darkframe-B.ppm:\n");
+        fprintf(stderr, "  averaged dark frames from the HDMI recorder (even/odd frames)\n");
+        fprintf(stderr, "\n");
         show_commandline_help(argv[0]);
         return 0;
     }
@@ -761,13 +761,13 @@ int main(int argc, char** argv)
             parse_commandline_option(argv[k]);
     show_active_options();
 
-    printf("\n");
+    fprintf(stderr, "\n");
 
     char* dark_filename_a = "darkframe-hdmi-A.ppm";
     char* dark_filename_b = "darkframe-hdmi-B.ppm";
     if (file_exists_warn(dark_filename_a) && file_exists_warn(dark_filename_b))
     {
-        printf("Dark frames : darkframe-hdmi-[AB].ppm\n");
+        fprintf(stderr, "Dark frames : darkframe-hdmi-[AB].ppm\n");
         read_ppm(dark_filename_a, &darkA);
         read_ppm(dark_filename_b, &darkB);
 
@@ -786,7 +786,7 @@ int main(int argc, char** argv)
 
         char* out_filename;
 
-        printf("\n%s\n", argv[k]);
+        fprintf(stderr, "\n%s\n", argv[k]);
         
         if (endswith(argv[k], ".mov") || endswith(argv[k], ".MOV"))
         {
@@ -802,7 +802,7 @@ int main(int argc, char** argv)
                 /* read 3 frames to check the frame order (A/B) */
                 {
                     snprintf(cmd, sizeof(cmd), "ffmpeg -i '%s' -f image2pipe -vcodec ppm -vframes 3 - -loglevel warning -hide_banner", argv[k]);
-                    printf("%s\n", cmd);
+                    fprintf(stderr, "%s\n", cmd);
                     FILE* pipe = popen(cmd, "r");
                     CHECK(pipe, "ffmpeg");
                     uint16_t* rgbC = 0;
@@ -820,9 +820,9 @@ int main(int argc, char** argv)
                 }
 
                 /* open the movie again to process all frames */
-                printf("\n");
+                fprintf(stderr, "\n");
                 snprintf(cmd, sizeof(cmd), "ffmpeg -i '%s' -f image2pipe -vcodec ppm - -nostats", argv[k]);
-                printf("%s\n", cmd);
+                fprintf(stderr, "%s\n", cmd);
                 pipe = popen(cmd, "r");
                 CHECK(pipe, "ffmpeg");
 
@@ -851,23 +851,23 @@ int main(int argc, char** argv)
         }
         else
         {
-            printf("Unknown file type.\n");
+            fprintf(stderr, "Unknown file type.\n");
             continue;
         }
         
-        printf("Recovering raw data...\n");
+        fprintf(stderr, "Recovering raw data...\n");
         recover_raw_data(raw, rgbA, rgbB);
         
-        printf("Convert to linear...\n");
+        fprintf(stderr, "Convert to linear...\n");
         convert_to_linear(raw, 2*width, 2*height);
         
         if (dark)
         {
-            printf("Darkframe subtract...\n");
+            fprintf(stderr, "Darkframe subtract...\n");
             darkframe_subtract(raw, dark, 2*width, 2*height);
         }
         
-        printf("Output file : %s\n", out_filename);
+        fprintf(stderr, "Output file : %s\n", out_filename);
         write_pgm(out_filename, raw, 2*width, 2*height);
 
 cleanup:
@@ -877,7 +877,7 @@ cleanup:
     }
     
     if (pipe) pclose(pipe);
-    printf("Done.\n\n");
+    fprintf(stderr, "Done.\n\n");
     
     return 0;
 }

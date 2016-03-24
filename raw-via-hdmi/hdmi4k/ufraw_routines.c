@@ -82,7 +82,7 @@ void CLASS color_smooth(uint16_t* image, const int width, const int height,
     int count;
 
     for (count = 0; count < passes; count++) {
-        printf("Color smooth (%d/%d)...\n", count+1, passes);
+        fprintf(stderr, "Color smooth (%d/%d)...\n", count+1, passes);
         //perform 3 iterations - seems to be a commonly settled upon number of iterations
         for (row = row_start; row < row_stop; row++) {
             for (col = col_start; col < col_stop; col++) {

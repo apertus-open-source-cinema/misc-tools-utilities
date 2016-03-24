@@ -91,7 +91,7 @@ static void horizontal_edge_aware_blur_rgb(
     int bg[NMAX];
     if (strength > NMAX)
     {
-        printf("FIXME: blur too strong\n");
+        fprintf(stderr, "FIXME: blur too strong\n");
         return;
     }
     
@@ -142,7 +142,7 @@ static void horizontal_edge_aware_blur_rgb(
                 num++;
             }
             
-            //~ printf("%d ", num);
+            //~ fprintf(stderr, "%d ", num);
             int mg = median_int_wirth(g, num);
             out_g[x + y*w] = mg;
             out_r[x + y*w] = median_int_wirth(rg, num) + mg;
@@ -309,7 +309,7 @@ static void fix_column_noise_rgb(uint16_t * rgb, uint16_t * denoised, int w, int
         /* strong horizontal denoising (1-D median blur on G, R-G and B-G, stop on edge */
         /* (this step takes a lot of time) */
         horizontal_edge_aware_blur_rgb(r, g, b, rs, gs, bs, w, h, 5000, 50);
-        printf("."); fflush(stdout);
+        fprintf(stderr, "."); fflush(stdout);
     }
 
     /* after blurring horizontally, the difference reveals vertical FPN */
@@ -317,7 +317,7 @@ static void fix_column_noise_rgb(uint16_t * rgb, uint16_t * denoised, int w, int
     fix_column_noise(r, rs, w, h);
     fix_column_noise(g, gs, w, h);
     fix_column_noise(b, bs, w, h);
-    printf("."); fflush(stdout);
+    fprintf(stderr, "."); fflush(stdout);
 
     /* commit changes */
     set_channel(rgb, r, w, h, 0);
@@ -335,7 +335,7 @@ static void fix_column_noise_rgb(uint16_t * rgb, uint16_t * denoised, int w, int
 
 void fix_pattern_noise_ex(uint16_t * rgb, uint16_t * denoised, int width, int height, int row_noise_only, int debug_flags)
 {
-    printf("Fixing %s noise", row_noise_only ? "row" : "pattern");
+    fprintf(stderr, "Fixing %s noise", row_noise_only ? "row" : "pattern");
     fflush(stdout);
     
     g_debug_flags = debug_flags;
@@ -365,7 +365,7 @@ void fix_pattern_noise_ex(uint16_t * rgb, uint16_t * denoised, int width, int he
         if (denoised_t) free(denoised_t);
     }
     
-    printf("\n");
+    fprintf(stderr, "\n");
 }
 
 

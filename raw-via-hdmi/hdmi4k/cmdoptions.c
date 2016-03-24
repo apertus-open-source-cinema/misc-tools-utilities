@@ -21,7 +21,7 @@ static void parse_sscanf(char* user_input, char* format, void* ptr, int num_vars
     char* p = strchr(format, '%');
     for (i = 0; p != NULL && i < num_vars; i++, p = strchr(p+1, '%'))
     {
-        //~ printf("%s: %p %p\n", format, ptr, &soft_film_ev);
+        //~ fprintf(stderr, "%s: %p %p\n", format, ptr, &soft_film_ev);
         pointers[i] = ptr;
         int size = 
             *(p+1) == 'd' ? sizeof(int) :
@@ -35,14 +35,14 @@ static void parse_sscanf(char* user_input, char* format, void* ptr, int num_vars
     int num = sscanf(user_input, format, pointers[0], pointers[1], pointers[2], pointers[3], pointers[4]);
     if (num != num_vars)
     {
-        printf("Error parsing %s: expected %d param%s, got %d\n", format, num_vars, num_vars == 1 ? "" : "s", num);
+        fprintf(stderr, "Error parsing %s: expected %d param%s, got %d\n", format, num_vars, num_vars == 1 ? "" : "s", num);
         exit(1);
     }
 
     return;
 
 err:
-    printf("invalid option: %s (internal error)\n", format);
+    fprintf(stderr, "invalid option: %s (internal error)\n", format);
     exit(1);
 }
 
@@ -55,18 +55,18 @@ static void print_sscanf_option(char* format, void* ptr, int num_vars, char* hel
     {
         if (*p != '%')
         {
-            len += printf("%c", *p);
+            len += fprintf(stderr, "%c", *p);
         }
         else
         {
             if (*(p+1) == 'd')
             {
-                len += printf("%d", *(int*)ptr);
+                len += fprintf(stderr, "%d", *(int*)ptr);
                 ptr += sizeof(float);
             }
             else if (*(p+1) == 'f')
             {
-                len += printf("%g", *(float*)ptr);
+                len += fprintf(stderr, "%g", *(float*)ptr);
                 ptr += sizeof(int);
             }
             p++; i++;
@@ -74,9 +74,9 @@ static void print_sscanf_option(char* format, void* ptr, int num_vars, char* hel
     }
     while (len < 20)
     {
-        len += printf(" ");
+        len += fprintf(stderr, " ");
     }
-    printf(": %s\n", help);
+    fprintf(stderr, ": %s\n", help);
 }
 
 void parse_commandline_option(char* option)
@@ -113,7 +113,7 @@ void parse_commandline_option(char* option)
             }
         }
     }
-    printf("Unknown option: %s\n", option);
+    fprintf(stderr, "Unknown option: %s\n", option);
     exit(1);
 }
 
@@ -122,16 +122,16 @@ void show_commandline_help(char* progname)
     struct cmd_group * g;
     for (g = options; g->name; g++)
     {
-        printf("%s:\n", g->name);
+        fprintf(stderr, "%s:\n", g->name);
         struct cmd_option * o;
         for (o = g->options; o->option; o++)
         {
             if (o->help)
             {
-                printf("%-20s: %s\n", o->option, o->help);
+                fprintf(stderr, "%-20s: %s\n", o->option, o->help);
             }
         }
-        printf("\n");
+        fprintf(stderr, "\n");
     }
 }
 
@@ -157,7 +157,7 @@ void show_active_options()
     
     if (any_active)
     {
-        printf("Active options:\n");
+        fprintf(stderr, "Active options:\n");
     }
 
     for (g = options; g->name; g++)
@@ -174,7 +174,7 @@ void show_active_options()
                 }
                 else
                 {
-                    printf("%-20s: %s\n", o->option, first_line(o->help));
+                    fprintf(stderr, "%-20s: %s\n", o->option, first_line(o->help));
                 }
             }
         }
