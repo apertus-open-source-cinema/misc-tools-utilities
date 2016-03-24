@@ -44,10 +44,13 @@ uint16_t* darkA;
 uint16_t* darkB;
 uint16_t* dark;
 
+int output_stdout = 0;
+
 struct cmd_group options[] = {
     {
         "Options", (struct cmd_option[]) {
-            OPTION_EOL,
+           { &output_stdout,        1,      "-",  "Output PGM to stdout (can be piped to raw2dng)" },
+           OPTION_EOL,
         },
     },
     OPTION_GROUP_EOL
@@ -166,15 +169,19 @@ static void read_ppm(char* filename, uint16_t** prgb)
 
 /* Output 16-bit PGM file */
 /* caveat: it reverses bytes order in the buffer */
-static void write_pgm(char* filename, uint16_t * raw, int w, int h)
+static void write_pgm_stream(FILE* f, uint16_t * raw, int w, int h)
 {
-    fprintf(stderr, "Writing %s...\n", filename);
-    FILE* f = fopen(filename, "wb");
     fprintf(f, "P5\n%d %d\n65535\n", w, h);
 
     /* PPM is big endian, need to reverse it */
     reverse_bytes_order((void*)raw, w * h * 2);
     fwrite(raw, 1, w * h * 2, f);
+}
+
+static void write_pgm(char* filename, uint16_t * raw, int w, int h)
+{
+    fprintf(stderr, "Writing %s...\n", filename);
+    FILE* f = fopen(filename, "wb");
     fclose(f);
 }
 
@@ -867,10 +874,16 @@ int main(int argc, char** argv)
             darkframe_subtract(raw, dark, 2*width, 2*height);
         }
         
-        fprintf(stderr, "Output file : %s\n", out_filename);
-        write_pgm(out_filename, raw, 2*width, 2*height);
+        if (output_stdout)
+        {
+            write_pgm_stream(stdout, raw, 2*width, 2*height);
+        }
+        else
+        {
+            fprintf(stderr, "Output file : %s\n", out_filename);
+            write_pgm(out_filename, raw, 2*width, 2*height);
+        }
 
-cleanup:
         free(rgbA); rgbA = 0;
         free(rgbB); rgbB = 0;
         free(raw);  raw = 0;
