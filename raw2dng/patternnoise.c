@@ -297,7 +297,8 @@ static void set_channel(int16_t * out, int16_t * in, int w, int h, int dx, int d
     }
 }
 
-static void fix_column_noise_rggb(int16_t * raw, int w, int h, int white)
+/* denoised is optional */
+static void fix_column_noise_rggb(int16_t * raw, int16_t * denoised, int w, int h, int white)
 {
     /* assume Bayer order [GB;RG] */
     int16_t * r        = malloc(w/2 * h/2 * sizeof(r[0]));   /* red channel (bottom left) */
@@ -315,13 +316,23 @@ static void fix_column_noise_rggb(int16_t * raw, int w, int h, int white)
     extract_channel(raw, g2, w, h, 1, 1);
     extract_channel(raw, b,  w, h, 1, 0);
 
-    /* fixme: hardcoded for gain=1 */
-    int clip_thr = 2500*8;
+    /* fixme: test */
+    int clip_thr = 3900*8;
     
-    /* strong horizontal denoising (1-D median blur on G, R-G and B-G, stop on edge */
-    /* (this step takes a lot of time) */
-    horizontal_edge_aware_blur_rggb(r, g1, g2, b, rs, g1s, g2s, bs, w/2, h/2, 200, 50, 250, clip_thr);
-    printf("."); fflush(stdout);
+    if (denoised)
+    {
+        extract_channel(denoised, rs,  w, h, 0, 1);
+        extract_channel(denoised, g1s, w, h, 0, 0);
+        extract_channel(denoised, g2s, w, h, 1, 1);
+        extract_channel(denoised, bs,  w, h, 1, 0);
+    }
+    else
+    {
+        /* strong horizontal denoising (1-D median blur on G, R-G and B-G, stop on edge */
+        /* (this step takes a lot of time) */
+        horizontal_edge_aware_blur_rggb(r, g1, g2, b, rs, g1s, g2s, bs, w/2, h/2, 200, 50, 250, clip_thr);
+        printf("."); fflush(stdout);
+    }
 
     /* after blurring horizontally, the difference reveals vertical FPN */
 
@@ -356,7 +367,7 @@ static void fix_column_noise_rggb(int16_t * raw, int w, int h, int white)
     free(bs);
 }
 
-void fix_pattern_noise(struct raw_info * raw_info, int16_t * raw, int row_noise_only, int debug_flags)
+void fix_pattern_noise_ex(struct raw_info * raw_info, int16_t * raw, int16_t * denoised, int row_noise_only, int debug_flags)
 {
     printf("Fixing %s noise", row_noise_only ? "row" : "pattern");
     fflush(stdout);
@@ -382,18 +393,27 @@ void fix_pattern_noise(struct raw_info * raw_info, int16_t * raw, int row_noise_
     /* note: when debugging, we process only one direction */
     if (!row_noise_only && (!g_debug_flags || (g_debug_flags & FIXPN_DBG_COLNOISE)))
     {
-        fix_column_noise_rggb(raw, w, h, white);
+        fix_column_noise_rggb(raw, denoised, w, h, white);
     }
     
     if (row_noise_only || !g_debug_flags || !(g_debug_flags & FIXPN_DBG_COLNOISE))
     {
         /* transpose, process just like before, then transpose back */
-        int16_t * raw_t = malloc(w * h * sizeof(raw[0]));
+        int size = w * h * sizeof(raw[0]);
+        int16_t * raw_t = malloc(size);
+        int16_t * denoised_t = denoised ? malloc(size) : 0;
         transpose(raw, raw_t, w, h);
-        fix_column_noise_rggb(raw_t, h, w, white);
+        if (denoised_t) transpose(denoised, denoised_t, w, h);
+        fix_column_noise_rggb(raw_t, denoised_t, h, w, white);
         transpose(raw_t, raw, h, w);
         free(raw_t);
+        if (denoised_t) free(denoised_t);
     }
     
     printf("\n");
+}
+
+void fix_pattern_noise(struct raw_info * raw_info, int16_t * raw16, int row_noise_only, int debug_flags)
+{
+    fix_pattern_noise_ex(raw_info, raw16, 0, row_noise_only, debug_flags);
 }

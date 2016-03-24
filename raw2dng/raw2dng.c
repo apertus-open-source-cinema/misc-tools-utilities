@@ -115,8 +115,11 @@ struct cmd_group options[] = {
             { &rownoise_filter,1,"--rnfilter=1",   "FIR filter for row noise correction from black columns" },
             { &rownoise_filter,2,"--rnfilter=2",   "FIR filter for row noise correction from black columns\n"
                              "                      and per-row median differences in green channels" },
-            { &fixpn,          1,  "--fixrn",      "Fix row noise by image filtering (slow, guesswork)" },
-            { &fixpn,          2,  "--fixpn",      "Fix row and column noise (SLOW, guesswork)" },
+            { &fixpn,          1, "--fixrn",       "Fix row noise by image filtering (slow, guesswork)" },
+            { &fixpn,          2, "--fixpn",       "Fix row and column noise (SLOW, guesswork)" },
+            { &fixpn,          3, "--fixrnt",      "Temporal row noise fix (use with static backgrounds; recommended)" },
+            { &fixpn,          4, "--fixpnt",      "Temporal row/column noise fix (use with static backgrounds)" },
+
             { &no_blackcol_rn,1,"--no-blackcol-rn","Disable row noise correction from black columns\n"
                              "                      (they are still used to correct static offsets)" },
             { &no_blackcol_ff,1,"--no-blackcol-ff","Disable fixed frequency correction in black columns" },
@@ -172,6 +175,10 @@ struct raw_info raw_info;
    ({ __typeof__ ((a)+(b)) _a = (a); \
       __typeof__ ((a)+(b)) _b = (b); \
      _a > _b ? _a : _b; })
+
+#define ABS(a) \
+   ({ __typeof__ (a) _a = (a); \
+     _a > 0 ? _a : -_a; })
 
 #define COUNT(x)        ((int)(sizeof(x)/sizeof((x)[0])))
 
@@ -1553,6 +1560,7 @@ static int read_pgm_stream(FILE* fp, struct raw_info * raw_info, int16_t ** praw
     return 1;
 }
 
+#if 0
 static void read_pgm(char* filename, struct raw_info * raw_info, int16_t ** praw16)
 {
     FILE* fp = fopen(filename, "rb");
@@ -1561,6 +1569,68 @@ static void read_pgm(char* filename, struct raw_info * raw_info, int16_t ** praw
     read_pgm_stream(fp, raw_info, praw16);
     
     fclose(fp);
+}
+#endif
+
+
+/* temporal pattern denoising */
+struct
+{
+    int32_t * avg;
+    int count;
+} M;
+
+static void moving_average_addframe(struct raw_info * raw_info, int16_t * raw16)
+{
+    int n = raw_info->width * raw_info->height;
+    int frame_size = n * sizeof(M.avg[0]);
+    
+    if (!M.avg)
+    {
+        /* allocate memory on first call */
+        M.avg = malloc(frame_size);
+        CHECK(M.avg, "malloc");
+
+        for (int i = 0; i < n; i++)
+        {
+            M.avg[i] = raw16[i] * 16384;
+        }
+    }
+        
+    /* add current frame to accumulator */
+    for (int i = 0; i < n; i++)
+    {
+        int pix = raw16[i] * 16384;
+        int avg = M.avg[i];
+        int dif = ABS(pix - avg);
+        if (dif > 500 * 16384)
+        {
+            /* reset moving average if difference gets too high (probably motion) */
+            M.avg[i] = pix;
+        }
+        else
+        {
+            M.avg[i] = M.avg[i] * 7/8 + pix * 1/8;
+        }
+    }
+    M.count++;
+}
+
+static void fix_pattern_noise_temporally(struct raw_info * raw_info, int16_t * raw16, int fixpn_flags)
+{
+    moving_average_addframe(raw_info, raw16);
+    
+    int n = raw_info->width * raw_info->height;
+    int16_t* avg = malloc(n * sizeof(avg[0]));
+    
+    for (int i = 0; i < n; i++)
+    {
+        avg[i] = (M.avg[i] + 8192) / 16384;
+    }
+    
+    fix_pattern_noise_ex(raw_info, raw16, avg, fixpn & 1, fixpn_flags);
+    
+    free(avg);
 }
 
 static void change_ext(char* old, char* new, char* newext, int maxsize)
@@ -1917,7 +1987,14 @@ int main(int argc, char** argv)
         if (fixpn)
         {
             int fixpn_flags = fixpn_flags1 | fixpn_flags2;
-            fix_pattern_noise(&raw_info, raw16, fixpn == 1, fixpn_flags);
+            if (fixpn == 3 || fixpn == 4)
+            {
+                fix_pattern_noise_temporally(&raw_info, raw16, fixpn_flags);
+            }
+            else
+            {
+                fix_pattern_noise(&raw_info, raw16, fixpn & 1, fixpn_flags);
+            }
         }
 
         if (use_lut)

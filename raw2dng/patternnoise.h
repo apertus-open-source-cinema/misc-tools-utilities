@@ -17,6 +17,9 @@
 void fix_pattern_noise(struct raw_info * raw_info, int16_t * raw16, int row_noise_only, int debug_flags);
 void highlight_blur(struct raw_info * raw_info, int16_t * raw);
 
+/* with this one, you supply a denoised image as well */
+void fix_pattern_noise_ex(struct raw_info * raw_info, int16_t * raw, int16_t * denoised, int row_noise_only, int debug_flags);
+
 /* debug flags */
 #define FIXPN_DBG_ROWNOISE  0
 #define FIXPN_DBG_COLNOISE  1
