@@ -33,9 +33,9 @@
 #include "ufraw_routines.h"
 
 /* image data */
-uint16_t* rgbA;     /* HDMI frame A (width x height x 3, PPM order) */
-uint16_t* rgbB;     /* HDMI frame B */
-uint16_t* raw;      /* Bayer raw image (double resolution) */
+uint16_t* rgbA = 0;     /* HDMI frame A (width x height x 3, PPM order) */
+uint16_t* rgbB = 0;     /* HDMI frame B */
+uint16_t* raw = 0;      /* Bayer raw image (double resolution) */
 int width;
 int height;
 
@@ -44,12 +44,9 @@ uint16_t* darkA;
 uint16_t* darkB;
 uint16_t* dark;
 
-int check_only = 0;
-
 struct cmd_group options[] = {
     {
         "Options", (struct cmd_option[]) {
-            { &check_only,      1,          "--check-only",  "Only check the frame order (no output)" },
             OPTION_EOL,
         },
     },
@@ -92,6 +89,14 @@ static int endswith(char* str, char* suffix)
     return 0;
 }
 
+static void change_ext(char* old, char* new, char* newext, int maxsize)
+{
+    snprintf(new, maxsize - strlen(newext), "%s", old);
+    char* ext = strrchr(new, '.');
+    if (!ext) ext = new + strlen(new);
+    strcpy(ext, newext);
+}
+
 static void reverse_bytes_order(uint8_t* buf, int count)
 {
     uint16_t* buf16 = (uint16_t*) buf;
@@ -106,15 +111,12 @@ static void reverse_bytes_order(uint8_t* buf, int count)
 
 /* 16-bit PPM, as converted by FFMPEG */
 /* rgb is allocated by us */
-static void read_ppm(char* filename, uint16_t** prgb)
+static int read_ppm_stream(FILE* fp, uint16_t** prgb)
 {
-    FILE* fp = fopen(filename, "rb");
-    CHECK(fp, "could not open %s", filename);
+    /* PGM read code from dcraw, adapted for PPM and modified to report EOF */
+    int dim[3]={0,0,0}, comment=0, number=0, error=0, nd=0, c, fc;
 
-    /* PGM read code from dcraw, adapted for PPM */
-    int dim[3]={0,0,0}, comment=0, number=0, error=0, nd=0, c;
-
-      if (fgetc(fp) != 'P' || fgetc(fp) != '6') error = 1;
+      if ((fc = fgetc(fp)) != 'P' || fgetc(fp) != '6') error = 1;
       while (!error && nd < 3 && (c = fgetc(fp)) != EOF) {
         if (c == '#')  comment = 1;
         if (c == '\n') comment = 0;
@@ -128,7 +130,13 @@ static void read_ppm(char* filename, uint16_t** prgb)
         }
       }
     
-    CHECK(!(error || nd < 3), "not a valid PGM file\n");
+    if (fc == EOF)
+    {
+        printf("End of file.\n");
+        return 0;
+    }
+    
+    CHECK(!(error || nd < 3), "not a valid PPM file\n");
 
     width = dim[0];
     height = dim[1];
@@ -139,10 +147,21 @@ static void read_ppm(char* filename, uint16_t** prgb)
     
     int size = fread(rgb, 1, width * height * 2 * 3, fp);
     CHECK(size == width * height * 2 * 3, "fread");
-    fclose(fp);
     
     /* PPM is big endian, need to reverse it */
     reverse_bytes_order((void*)rgb, width * height * 2 * 3);
+    
+    return 1;
+}
+
+static void read_ppm(char* filename, uint16_t** prgb)
+{
+    FILE* fp = fopen(filename, "rb");
+    CHECK(fp, "could not open %s", filename);
+    
+    read_ppm_stream(fp, prgb);
+
+    fclose(fp);
 }
 
 /* Output 16-bit PGM file */
@@ -674,7 +693,7 @@ static void recover_raw_data(uint16_t* raw, uint16_t* rgbA, uint16_t* rgbB)
     }
 }
 
-/* return: 1 = ok, -1 = retry */
+/* return: 1 = ok, 0 = bad, -1 = retry */
 int check_frame_order(uint16_t* rgbA, uint16_t* rgbB, uint16_t* rgbC, int k)
 {
     /*
@@ -703,7 +722,7 @@ int check_frame_order(uint16_t* rgbA, uint16_t* rgbB, uint16_t* rgbC, int k)
     {
         int a = (bc == 0) ? 1 : 0;
         int b = (ab == 0) ? 1 : 2;
-        printf("Frames %d and %d are identical\n", a+k, b+k);
+        printf("Frames %d and %d are identical (cannot check).\n", a+k, b+k);
         return -1;
     }
         
@@ -711,10 +730,8 @@ int check_frame_order(uint16_t* rgbA, uint16_t* rgbB, uint16_t* rgbC, int k)
     
     if (ab > bc)
     {
-        printf("ERROR: frame pairs do not match.\n");
-        printf("Try skipping one frame in ffmpeg:\n");
-        printf("-ss 00.016 on A frames, -ss 00.032 on B frames\n");
-        exit(2);
+        printf("Frame pairs do not match.\n");
+        return 0;
     }
     
     return 1;
@@ -727,13 +744,11 @@ int main(int argc, char** argv)
         printf("HDMI RAW converter for Axiom BETA\n");
         printf("\n");
         printf("Usage:\n");
-        printf("  ffmpeg -i input.mov -vf \"framestep=2\" frame%%05dA.ppm\n");
-        printf("  ffmpeg -ss 00.016 -i input.mov -vf \"framestep=2\" frame%%05dB.ppm\n");
-        printf("  %s frame*A.ppm\n", argv[0]);
+        printf("  %s clip.mov\n", argv[0]);
         printf("  raw2dng frame*.pgm [options]\n");
         printf("\n");
         printf("Calibration files:\n");
-        printf("  hdmi-darkframe-A.ppm, hdmi-darkframe-A.ppm:\n");
+        printf("  hdmi-darkframe-A.ppm, hdmi-darkframe-B.ppm:\n");
         printf("  averaged dark frames from the HDMI recorder (even/odd frames)\n");
         printf("\n");
         show_commandline_help(argv[0]);
@@ -750,7 +765,7 @@ int main(int argc, char** argv)
 
     char* dark_filename_a = "darkframe-hdmi-A.ppm";
     char* dark_filename_b = "darkframe-hdmi-B.ppm";
-    if (!check_only && file_exists_warn(dark_filename_a) && file_exists_warn(dark_filename_b))
+    if (file_exists_warn(dark_filename_a) && file_exists_warn(dark_filename_b))
     {
         printf("Dark frames : darkframe-hdmi-[AB].ppm\n");
         read_ppm(dark_filename_a, &darkA);
@@ -760,8 +775,8 @@ int main(int argc, char** argv)
         recover_raw_data(dark, darkA, darkB);
         convert_to_linear(dark, 2*width, 2*height);
     }
-    
-    int check_frame = 1;
+
+    FILE* pipe = 0;
     
     /* all other arguments are input or output files */
     for (int k = 1; k < argc; k++)
@@ -773,58 +788,71 @@ int main(int argc, char** argv)
 
         printf("\n%s\n", argv[k]);
         
-        if (endswith(argv[k], "A.ppm"))
+        if (endswith(argv[k], ".mov") || endswith(argv[k], ".MOV"))
         {
-            /* replace input file extension (including the A character) with .pgm */
             static char fo[256];
-            int len = strlen(argv[k]) - 5;
-            snprintf(fo, sizeof(fo), "%s", argv[k]);
-            snprintf(fo+len, sizeof(fo)-len, ".pgm");
-            out_filename = fo;
-            
-            read_ppm(argv[k], &rgbA);
-            argv[k][len] = 'B';
-            read_ppm(argv[k], &rgbB);
-            raw = malloc(width * height * 4 * sizeof(raw[0]));
-            
-            if (check_frame)
+            static char fi[256];
+            static int fc = 0;
+
+            if (!pipe)
             {
-                if (k+1 < argc)
+                char cmd[1000];
+                int skip_frame = 0;
+                
+                /* read 3 frames to check the frame order (A/B) */
                 {
+                    snprintf(cmd, sizeof(cmd), "ffmpeg -i '%s' -f image2pipe -vcodec ppm -vframes 3 - -loglevel warning -hide_banner", argv[k]);
+                    printf("%s\n", cmd);
+                    FILE* pipe = popen(cmd, "r");
+                    CHECK(pipe, "ffmpeg");
                     uint16_t* rgbC = 0;
-                    read_ppm(argv[k+1], &rgbC);
-                    if (check_frame_order(rgbA, rgbB, rgbC, k) == 1 && !check_only)
+                    read_ppm_stream(pipe, &rgbA);
+                    read_ppm_stream(pipe, &rgbB);
+                    read_ppm_stream(pipe, &rgbC);
+                    pclose(pipe); pipe = 0;
+                    if (check_frame_order(rgbA, rgbB, rgbC, 1) == 0)
                     {
-                        /* check successful, assume next frames are OK */
-                        check_frame = 0;
+                        skip_frame = 1;
                     }
-                    free(rgbC);
+                    free(rgbA); rgbA = 0;
+                    free(rgbB); rgbB = 0;
+                    free(rgbC); rgbC = 0;
                 }
-                else
+
+                /* open the movie again to process all frames */
+                printf("\n");
+                snprintf(cmd, sizeof(cmd), "ffmpeg -i '%s' -f image2pipe -vcodec ppm - -nostats", argv[k]);
+                printf("%s\n", cmd);
+                pipe = popen(cmd, "r");
+                CHECK(pipe, "ffmpeg");
+
+                if (skip_frame)
                 {
-                    printf("Need 2 frame pairs to check frame type (A or B).\n");
+                    read_ppm_stream(pipe, &rgbA);
+                    free(rgbA); rgbA = 0;
                 }
             }
-        }
-        else if (endswith(argv[k], "B.ppm"))
-        {
-            printf("Ignored (please specify only A frames).\n");
-            continue;
-        }
-        else if (endswith(argv[k], ".ppm"))
-        {
-            printf("Input files should end in A.ppm.\n");
-            continue;
+
+            change_ext(argv[k], fi, "", sizeof(fi));
+            snprintf(fo, sizeof(fo), "%s-%05d.pgm", fi, fc++);
+            out_filename = fo;
+
+            /* this may leave rgbA allocated (memory leak),
+             * but since the program will exit right away, it's not a huge deal */
+            if (!read_ppm_stream(pipe, &rgbA))
+                break;
+            if (!read_ppm_stream(pipe, &rgbB))
+                break;
+            
+            raw = malloc(width * height * 4 * sizeof(raw[0]));
+
+            /* process the same file at next iteration */
+            k--;
         }
         else
         {
             printf("Unknown file type.\n");
             continue;
-        }
-        
-        if (check_only)
-        {
-            goto cleanup;
         }
         
         printf("Recovering raw data...\n");
@@ -848,6 +876,7 @@ cleanup:
         free(raw);  raw = 0;
     }
     
+    if (pipe) pclose(pipe);
     printf("Done.\n\n");
     
     return 0;
