@@ -39,6 +39,12 @@ uint16_t* raw;      /* Bayer raw image (double resolution) */
 int width;
 int height;
 
+/* HDMI dark frames, optional */
+uint16_t* darkA;
+uint16_t* darkB;
+uint16_t* dark;
+
+
 struct cmd_group options[] = {
     OPTION_GROUP_EOL
 };
@@ -188,6 +194,14 @@ static void convert_to_linear(uint16_t * raw, int w, int h)
     }
     
     free(lut);
+}
+
+static void darkframe_subtract(uint16_t* raw, uint16_t* dark, int w, int h)
+{
+    for (int i = 0; i < w * h; i++)
+    {
+        raw[i] = COERCE((int)raw[i] - dark[i] + 128 + 10, 0, 4095);
+    }
 }
 
 /**
@@ -588,7 +602,7 @@ const int filters[4][2][2][3][3][3] = {
   },
 };
 
-static void recover_bayer_channel(int dx, int dy)
+static void recover_bayer_channel(int dx, int dy, uint16_t* raw, uint16_t* rgbA, uint16_t* rgbB)
 {
     int ch = dx%2 + (dy%2) * 2;
     int w = width;
@@ -628,12 +642,12 @@ static void recover_bayer_channel(int dx, int dy)
 }
 
 /* recover raw data by filtering the two HDMI frames: rgbA and rgbB */
-static void recover_raw_data()
+static void recover_raw_data(uint16_t* raw, uint16_t* rgbA, uint16_t* rgbB)
 {
-    recover_bayer_channel(0,0);
-    recover_bayer_channel(0,1);
-    recover_bayer_channel(1,0);
-    recover_bayer_channel(1,1);
+    recover_bayer_channel(0, 0, raw, rgbA, rgbB);
+    recover_bayer_channel(0, 1, raw, rgbA, rgbB);
+    recover_bayer_channel(1, 0, raw, rgbA, rgbB);
+    recover_bayer_channel(1, 1, raw, rgbA, rgbB);
 
     /* fill border pixels */
     for (int y = 0; y < height; y++)
@@ -679,6 +693,19 @@ int main(int argc, char** argv)
     show_active_options();
 
     printf("\n");
+
+    char* dark_filename_a = "darkframe-hdmi-A.ppm";
+    char* dark_filename_b = "darkframe-hdmi-B.ppm";
+    if (file_exists_warn(dark_filename_a) && file_exists_warn(dark_filename_b))
+    {
+        printf("Dark frames : darkframe-hdmi-[AB].ppm\n");
+        read_ppm(dark_filename_a, &darkA);
+        read_ppm(dark_filename_b, &darkB);
+
+        dark = malloc(width * height * 4 * sizeof(dark[0]));
+        recover_raw_data(dark, darkA, darkB);
+        convert_to_linear(dark, 2*width, 2*height);
+    }
     
     /* all other arguments are input or output files */
     for (int k = 1; k < argc; k++)
@@ -721,10 +748,16 @@ int main(int argc, char** argv)
         }
         
         printf("Recovering raw data...\n");
-        recover_raw_data();
+        recover_raw_data(raw, rgbA, rgbB);
         
         printf("Convert to linear...\n");
         convert_to_linear(raw, 2*width, 2*height);
+        
+        if (dark)
+        {
+            printf("Darkframe subtract...\n");
+            darkframe_subtract(raw, dark, 2*width, 2*height);
+        }
         
         printf("Output file : %s\n", out_filename);
         write_pgm(out_filename, raw, 2*width, 2*height);
