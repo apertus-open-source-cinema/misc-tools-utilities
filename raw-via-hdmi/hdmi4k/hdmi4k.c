@@ -1121,6 +1121,7 @@ static void recover_bayer_channel_3(int dx, int dy, uint16_t* raw, uint16_t* rgb
     
     uint16_t* rgb[2] = {rgbA, rgbB};
 
+    #pragma omp parallel for
     for (int y = 1; y < h-1; y++)
     {
         for (int x = 1; x < w-1; x++)
@@ -1162,6 +1163,7 @@ static void recover_bayer_channel_5(int dx, int dy, uint16_t* raw, uint16_t* rgb
     
     uint16_t* rgb[2] = {rgbA, rgbB};
 
+    #pragma omp parallel for
     for (int y = 2; y < h-2; y++)
     {
         for (int x = 2; x < w-2; x++)
