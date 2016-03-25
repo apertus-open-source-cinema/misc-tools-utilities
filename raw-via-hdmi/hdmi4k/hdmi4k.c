@@ -184,6 +184,9 @@ static void write_pgm(char* filename, uint16_t * raw, int w, int h)
 {
     fprintf(stderr, "Writing %s...\n", filename);
     FILE* f = fopen(filename, "wb");
+    
+    write_pgm_stream(f, raw, w, h);
+    
     fclose(f);
 }
 
