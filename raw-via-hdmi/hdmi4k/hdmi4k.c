@@ -1216,7 +1216,7 @@ int main(int argc, char** argv)
         }
 
         t2 = omp_get_wtime() - t0;
-        printf("Processing took %.2fs (%.2fs filtering, %.2fs others)\n", t2, t1, t2 - t1);
+        fprintf(stderr, "Processing took %.2fs (%.2fs filtering, %.2fs others)\n", t2, t1, t2 - t1);
 
         if (output_stdout)
         {
