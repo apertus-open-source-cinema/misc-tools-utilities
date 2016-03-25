@@ -31,6 +31,7 @@
 #include "cmdoptions.h"
 #include "patternnoise.h"
 #include "ufraw_routines.h"
+#include "omp.h"
 
 /* image data */
 uint16_t* rgbA = 0;     /* HDMI frame A (width x height x 3, PPM order) */
@@ -1390,9 +1391,14 @@ int main(int argc, char** argv)
             fprintf(stderr, "Unknown file type.\n");
             continue;
         }
-        
+
+        double t0,t1,t2;
+        t0 = omp_get_wtime();
+
         fprintf(stderr, "Recovering raw data...\n");
         recover_raw_data(raw, rgbA, rgbB);
+
+        t1 = omp_get_wtime() - t0;
         
         fprintf(stderr, "Convert to linear...\n");
         convert_to_linear(raw, 2*width, 2*height);
@@ -1402,7 +1408,10 @@ int main(int argc, char** argv)
             fprintf(stderr, "Darkframe subtract...\n");
             darkframe_subtract(raw, dark, 2*width, 2*height);
         }
-        
+
+        t2 = omp_get_wtime() - t0;
+        printf("Processing took %.2fs (%.2fs filtering, %.2fs others)\n", t2, t1, t2 - t1);
+
         if (output_stdout)
         {
             write_pgm_stream(stdout, raw, 2*width, 2*height);
