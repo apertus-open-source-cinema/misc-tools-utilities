@@ -323,7 +323,7 @@ static void fix_column_noise_rggb(int16_t * raw, int16_t * denoised, int w, int 
     # pragma omp parallel for
     for (int k = 0; k < 4; k++)
     {
-        extract_channel(raw, bayer0[k],  w, h, (k/2)%2, k%2);
+        extract_channel(raw, bayer0[k],  w, h, (k/2)%2, (k+1)%2);
     }
     t1 = omp_get_wtime();
     
@@ -336,7 +336,7 @@ static void fix_column_noise_rggb(int16_t * raw, int16_t * denoised, int w, int 
         # pragma omp parallel for
         for (int k = 0; k < 4; k++)
         {
-            extract_channel(raw, bayers[k],  w, h, (k/2)%2, k%2);
+            extract_channel(raw, bayers[k],  w, h, (k/2)%2, (k+1)%2);
         }
     }
     else
@@ -370,7 +370,7 @@ static void fix_column_noise_rggb(int16_t * raw, int16_t * denoised, int w, int 
     # pragma omp parallel for
     for (int k = 0; k < 4; k++)
     {
-        set_channel(raw, bayer0[k], w, h, (k/2)%2, k%2);
+        set_channel(raw, bayer0[k], w, h, (k/2)%2, (k+1)%2);
     }
 
     t4 = omp_get_wtime();
