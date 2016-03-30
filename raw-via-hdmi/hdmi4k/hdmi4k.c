@@ -1108,8 +1108,11 @@ int check_frame_order(uint16_t* rgbA, uint16_t* rgbB)
     {
         /* pixel from below right */
         int j = i + (1 + width) * 3;
-        ab += ABS(((int)rgbB[i] + rgbB[j])/2 - rgbA[i]);
-        ba += ABS(((int)rgbA[i] + rgbA[j])/2 - rgbB[i]);
+        if (rgbA[i] > 65536/4 && rgbB[i] > 65536/4)
+        {
+            ab += ABS(((int)rgbB[i] + rgbB[j])/2 - rgbA[i]);
+            ba += ABS(((int)rgbA[i] + rgbA[j])/2 - rgbB[i]);
+        }
     }
 
     fprintf(stderr, "Frame deltas : (A-B):%.3g, (B-A):%.3g\n", (double) ab, (double) ba);
