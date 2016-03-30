@@ -13,6 +13,7 @@ rm frame*.dng
 
 # this reads the MOV file via ffmpeg
 # the output is piped to raw2dng, which also does temporal row noise correction
-hdmi4k $* - | raw2dng --pgm --fixrnt frame%05d.dng
+# lower the black level because of the "black hole" sensor behavior
+hdmi4k $* - | raw2dng --pgm --fixrnt --black=120 frame%05d.dng
 
 # todo: HDMI dark frame averaging script
