@@ -25,6 +25,7 @@
 #include "wirth.h"
 #include "math.h"
 #include "patternnoise.h"
+#include "omp.h"
 
 static int g_debug_flags;
 
@@ -62,6 +63,7 @@ static void average(int16_t * a, int16_t * b, int16_t * out, int w, int h)
 /* w and h are the size of input buffer; the output buffer will have the dimensions swapped */
 static void transpose(int16_t * in, int16_t * out, int w, int h)
 {
+    #pragma omp parallel for
     for (int y = 0; y < h; y++)
     {
         for (int x = 0; x < w; x++)
@@ -312,29 +314,39 @@ static void fix_column_noise_rggb(int16_t * raw, int16_t * denoised, int w, int 
     int16_t * g2s      = malloc(w/2 * h/2 * sizeof(r[0]));   /* g2 after smoothing */
     int16_t * bs       = malloc(w/2 * h/2 * sizeof(r[0]));   /* b  after smoothing */
     
+    int16_t* bayer0[4] = {r, g1, g2, b};
+    int16_t* bayers[4] = {rs, g1s, g2s, bs};
+    
+    double t0,t1,t2,t3,t4;
+    t0 = omp_get_wtime();
     /* extract half-res color channels from Bayer data */
-    extract_channel(raw, r,  w, h, 0, 1);
-    extract_channel(raw, g1, w, h, 0, 0);
-    extract_channel(raw, g2, w, h, 1, 1);
-    extract_channel(raw, b,  w, h, 1, 0);
+    # pragma omp parallel for
+    for (int k = 0; k < 4; k++)
+    {
+        extract_channel(raw, bayer0[k],  w, h, (k/2)%2, k%2);
+    }
+    t1 = omp_get_wtime();
+    
 
     /* fixme: test */
     int clip_thr = 3900*8;
     
     if (denoised)
     {
-        extract_channel(denoised, rs,  w, h, 0, 1);
-        extract_channel(denoised, g1s, w, h, 0, 0);
-        extract_channel(denoised, g2s, w, h, 1, 1);
-        extract_channel(denoised, bs,  w, h, 1, 0);
+        # pragma omp parallel for
+        for (int k = 0; k < 4; k++)
+        {
+            extract_channel(raw, bayers[k],  w, h, (k/2)%2, k%2);
+        }
     }
     else
     {
         /* strong horizontal denoising (1-D median blur on G, R-G and B-G, stop on edge */
         /* (this step takes a lot of time) */
         horizontal_edge_aware_blur_rggb(r, g1, g2, b, rs, g1s, g2s, bs, w/2, h/2, 200, 50, 250, clip_thr);
-        printf("."); fflush(stdout);
     }
+
+    t2 = omp_get_wtime();
 
     /* after blurring horizontally, the difference reveals vertical FPN */
 
@@ -345,18 +357,25 @@ static void fix_column_noise_rggb(int16_t * raw, int16_t * denoised, int w, int 
     int hl_en = !g_debug_flags;
     for (int hl = 0; hl <= hl_en; hl++)
     {
-        fix_column_noise(r,  rs,  w/2, h/2, clip_thr, hl);
-        fix_column_noise(g1, g1s, w/2, h/2, clip_thr, hl);
-        fix_column_noise(g2, g2s, w/2, h/2, clip_thr, hl);
-        fix_column_noise(b,  bs,  w/2, h/2, clip_thr, hl);
+        # pragma omp parallel for
+        for (int k = 0; k < 4; k++)
+        {
+            fix_column_noise(bayer0[k],  bayers[k],  w/2, h/2, clip_thr, hl);
+        }
     }
-    printf("."); fflush(stdout);
+
+    t3 = omp_get_wtime();
 
     /* commit changes */
-    set_channel(raw, r,  w, h, 0, 1);
-    set_channel(raw, g1, w, h, 0, 0);
-    set_channel(raw, g2, w, h, 1, 1);
-    set_channel(raw, b,  w, h, 1, 0);
+    # pragma omp parallel for
+    for (int k = 0; k < 4; k++)
+    {
+        set_channel(raw, bayer0[k], w, h, (k/2)%2, k%2);
+    }
+
+    t4 = omp_get_wtime();
+
+    printf(" (%.2f %.2f %.2f %.2f)", t1-t0, t2-t1, t3-t2, t4-t3);
 
     /* cleanup */
     free(r);
@@ -371,7 +390,7 @@ static void fix_column_noise_rggb(int16_t * raw, int16_t * denoised, int w, int 
 
 void fix_pattern_noise_ex(struct raw_info * raw_info, int16_t * raw, int16_t * denoised, int row_noise_only, int debug_flags)
 {
-    printf("Fixing %s noise", row_noise_only ? "row" : "pattern");
+    printf("Fixing %s noise...", row_noise_only ? "row" : "pattern");
     fflush(stdout);
 
     /* assume Bayer order [GB;RG] */
@@ -400,16 +419,23 @@ void fix_pattern_noise_ex(struct raw_info * raw_info, int16_t * raw, int16_t * d
     
     if (row_noise_only || !g_debug_flags || !(g_debug_flags & FIXPN_DBG_COLNOISE))
     {
+        double t0,t1,t2,t3;
+        t0 = omp_get_wtime();
+
         /* transpose, process just like before, then transpose back */
         int size = w * h * sizeof(raw[0]);
         int16_t * raw_t = malloc(size);
         int16_t * denoised_t = denoised ? malloc(size) : 0;
         transpose(raw, raw_t, w, h);
         if (denoised_t) transpose(denoised, denoised_t, w, h);
+        t1 = omp_get_wtime();
         fix_column_noise_rggb(raw_t, denoised_t, h, w, white);
+        t2 = omp_get_wtime();
         transpose(raw_t, raw, h, w);
         free(raw_t);
         if (denoised_t) free(denoised_t);
+        t3 = omp_get_wtime();
+        printf(" (%.2f %.2f %.2f)", t1-t0, t2-t1, t3-t2);
     }
     
     printf("\n");
