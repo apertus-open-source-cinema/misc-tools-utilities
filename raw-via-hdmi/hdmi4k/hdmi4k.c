@@ -47,12 +47,16 @@ uint16_t* dark;
 
 int filter_size = 5;
 int output_stdout = 0;
+int skip_one_frame = 0;
+int swap_frames = 0;
 
 struct cmd_group options[] = {
     {
         "Options", (struct cmd_option[]) {
            { &output_stdout,     1,      "-",        "Output PGM to stdout (can be piped to raw2dng)" },
            { &filter_size,       3,      "--3x3",    "Use 3x3 filters to recover detail (default 5x5)" },
+           { &skip_one_frame,    0,      "--skip",   "Toggle skipping one frame (try if A/B autodetection fails)" },
+           { &swap_frames,       0,      "--swap",   "Swap A and B frames inside a frame pair (encoding bug?)" },
            OPTION_EOL,
         },
     },
@@ -1163,6 +1167,11 @@ int main(int argc, char** argv)
                     free(rgbC); rgbC = 0;
                 }
 
+                if (skip_one_frame)
+                {
+                    skip_frame = !skip_frame;
+                }
+
                 /* open the movie again to process all frames */
                 fprintf(stderr, "\n");
                 snprintf(cmd, sizeof(cmd), "ffmpeg -i '%s' -f image2pipe -vcodec ppm - -nostats", argv[k]);
@@ -1172,6 +1181,7 @@ int main(int argc, char** argv)
 
                 if (skip_frame)
                 {
+                    fprintf(stderr, "Skipping one frame...\n");
                     read_ppm_stream(pipe, &rgbA);
                     free(rgbA); rgbA = 0;
                 }
@@ -1182,9 +1192,9 @@ int main(int argc, char** argv)
 
             /* this may leave rgbA allocated (memory leak),
              * but since the program will exit right away, it's not a huge deal */
-            if (!read_ppm_stream(pipe, &rgbA))
+            if (!read_ppm_stream(pipe, swap_frames ? &rgbB : &rgbA))
                 break;
-            if (!read_ppm_stream(pipe, &rgbB))
+            if (!read_ppm_stream(pipe, swap_frames ? &rgbA : &rgbB))
                 break;
             
             raw = malloc(width * height * 4 * sizeof(raw[0]));
