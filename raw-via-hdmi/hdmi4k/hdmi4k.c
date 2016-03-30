@@ -47,7 +47,7 @@ uint16_t* dark;
 
 int filter_size = 5;
 int output_stdout = 0;
-int skip_one_frame = 0;
+int skip_frame = 0;
 int swap_frames = 0;
 
 struct cmd_group options[] = {
@@ -55,7 +55,7 @@ struct cmd_group options[] = {
         "Options", (struct cmd_option[]) {
            { &output_stdout,     1,      "-",        "Output PGM to stdout (can be piped to raw2dng)" },
            { &filter_size,       3,      "--3x3",    "Use 3x3 filters to recover detail (default 5x5)" },
-           { &skip_one_frame,    1,      "--skip",   "Toggle skipping one frame (try if A/B autodetection fails)" },
+           { &skip_frame,        1,      "--skip",   "Toggle skipping one frame (try if A/B autodetection fails)" },
            { &swap_frames,       1,      "--swap",   "Swap A and B frames inside a frame pair (encoding bug?)" },
            OPTION_EOL,
         },
@@ -1043,17 +1043,22 @@ static void recover_raw_data(uint16_t* raw, uint16_t* rgbA, uint16_t* rgbB)
 }
 
 /* return: 1 = ok, 0 = bad, -1 = retry */
-int check_frame_order(uint16_t* rgbA, uint16_t* rgbB, uint16_t* rgbC, int k)
+int check_frame_pairs(uint16_t* rgbA, uint16_t* rgbB, uint16_t* rgbC)
 {
     /*
      * rgbA: R, G1, B
      * rgbB: R',G2, B'
      * ' = delayed by 1 pixel
      * 
-     * They may be reversed, so we will try to autodetect
-     * which frame is A and which is B, from the first 3 frames.
+     * They may be reversed, and recording can start at every frame,
+     * so we will try to autodetect two things:
+     * - which is a correct frame pair: frames 1-2 or frames 2-3?
+     *   (in other words, do we have to skip one frame?)
+     * - inside one pair, which frame is A and which is B?
+     *   (sometimes they get swapped - encoder issue?)
      * 
-     * We will check the difference between frames 1-2 and 2-3.
+     * This routine performs the first check. The second one
+     * is done by check_frame_order.
      */
 
     int n = width * height * 3;
@@ -1071,19 +1076,53 @@ int check_frame_order(uint16_t* rgbA, uint16_t* rgbB, uint16_t* rgbC, int k)
     {
         int a = (bc == 0) ? 1 : 0;
         int b = (ab == 0) ? 1 : 2;
-        fprintf(stderr, "Frames %d and %d are identical (cannot check).\n", a+k, b+k);
+        fprintf(stderr, "Frames %d and %d are identical (cannot check frame pairs).\n", a+1, b+1);
         return -1;
     }
         
-    fprintf(stderr, "Frame deltas : %.3g, %.3g\n", (double) ab, (double) bc);
+    fprintf(stderr, "Frame deltas : (1-2):%.3g, (2-3):%.3g\n", (double) ab, (double) bc);
     
     if (ab > bc)
     {
-        fprintf(stderr, "Frame pairs do not match.\n");
+        fprintf(stderr, "Frames 2 and 3 match (should skip one frame).\n");
         return 0;
     }
-    
-    return 1;
+    else
+    {
+        fprintf(stderr, "Frames 1 and 2 match (OK).\n");
+        return 1;
+    }
+}
+
+int check_frame_order(uint16_t* rgbA, uint16_t* rgbB)
+{
+    /* check which frame is A and which is B
+     * by looking at the green pixels:
+     * GA(x,y) should match GB(x,y) + GB(x+1,x+1))/2
+     */
+
+    int n = width * height * 3;
+    int64_t ab = 0;
+    int64_t ba = 0;
+    for (int i = 1; i < n - width*3 - 3; i += 3)
+    {
+        /* pixel from below right */
+        int j = i + (1 + width) * 3;
+        ab += ABS(((int)rgbB[i] + rgbB[j])/2 - rgbA[i]);
+        ba += ABS(((int)rgbA[i] + rgbA[j])/2 - rgbB[i]);
+    }
+
+    fprintf(stderr, "Frame deltas : (A-B):%.3g, (B-A):%.3g\n", (double) ab, (double) ba);
+    if (ab < ba)
+    {
+        fprintf(stderr, "Frame order is A-B.\n");
+        return 0;
+    }
+    else
+    {
+        fprintf(stderr, "Frames order is B-A.\n");
+        return 1;
+    }
 }
 
 int main(int argc, char** argv)
@@ -1158,18 +1197,19 @@ int main(int argc, char** argv)
                     read_ppm_stream(pipe, &rgbB);
                     read_ppm_stream(pipe, &rgbC);
                     pclose(pipe); pipe = 0;
-                    if (check_frame_order(rgbA, rgbB, rgbC, 1) == 0)
+                    if (check_frame_pairs(rgbA, rgbB, rgbC) == 0)
                     {
-                        skip_frame = 1;
+                        skip_frame = !skip_frame;
+                    }
+
+                    if (check_frame_order(skip_frame ? rgbB : rgbA, 
+                                          skip_frame ? rgbC : rgbB))
+                    {
+                        swap_frames = !swap_frames;
                     }
                     free(rgbA); rgbA = 0;
                     free(rgbB); rgbB = 0;
                     free(rgbC); rgbC = 0;
-                }
-
-                if (skip_one_frame)
-                {
-                    skip_frame = !skip_frame;
                 }
 
                 /* open the movie again to process all frames */
