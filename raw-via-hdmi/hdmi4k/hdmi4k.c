@@ -55,8 +55,8 @@ struct cmd_group options[] = {
         "Options", (struct cmd_option[]) {
            { &output_stdout,     1,      "-",        "Output PGM to stdout (can be piped to raw2dng)" },
            { &filter_size,       3,      "--3x3",    "Use 3x3 filters to recover detail (default 5x5)" },
-           { &skip_one_frame,    0,      "--skip",   "Toggle skipping one frame (try if A/B autodetection fails)" },
-           { &swap_frames,       0,      "--swap",   "Swap A and B frames inside a frame pair (encoding bug?)" },
+           { &skip_one_frame,    1,      "--skip",   "Toggle skipping one frame (try if A/B autodetection fails)" },
+           { &swap_frames,       1,      "--swap",   "Swap A and B frames inside a frame pair (encoding bug?)" },
            OPTION_EOL,
         },
     },
