@@ -51,6 +51,10 @@ int skip_frames = 0;
 int swap_frames = 0;
 int skip_frame_toggle = 0;
 
+/* for bad takes */
+int only_A = 0;
+int only_B = 0;
+
 struct cmd_group options[] = {
     {
         "Options", (struct cmd_option[]) {
@@ -58,6 +62,8 @@ struct cmd_group options[] = {
            { &filter_size,       3,      "--3x3",    "Use 3x3 filters to recover detail (default 5x5)" },
            { &skip_frame_toggle, 1,      "--skip",   "Toggle skipping one frame (try if A/B autodetection fails)" },
            { &swap_frames,       1,      "--swap",   "Swap A and B frames inside a frame pair (encoding bug?)" },
+           { &only_A,            1,      "--onlyA",  "Use data from A frames only (for bad takes)" },
+           { &only_B,            1,      "--onlyB",  "Use data from B frames only (for bad takes)" },
            OPTION_EOL,
         },
     },
@@ -1011,6 +1017,262 @@ static void recover_bayer_data_5x5_brute_force(uint16_t* raw, uint16_t* rgbA, ui
     }
 }
 
+static void recover_bayer_data_3x3_only_A_brute_force(uint16_t* raw, uint16_t* rgbA, uint16_t* rgbB)
+{
+    #pragma omp parallel for
+    for (int y = 2; y < height-2; y++)
+    {
+        for (int x = 2; x < width-2; x++)
+        {
+            int red = (x % 2)
+              ? (  /* odd columns: */
+               /* from frame A, red (sum=1.08): */
+                 -1129*(int)rgbA[x*3+y*5760 -5763]  +2587*(int)rgbA[x*3+y*5760 -5760]   +722*(int)rgbA[x*3+y*5760 -5757]
+                 -1655*(int)rgbA[x*3+y*5760    -3]  +5088*(int)rgbA[x*3+y*5760    +0]  +1092*(int)rgbA[x*3+y*5760    +3]
+                  -976*(int)rgbA[x*3+y*5760 +5757]  +2415*(int)rgbA[x*3+y*5760 +5760]   +664*(int)rgbA[x*3+y*5760 +5763]
+               /* from frame A, green (sum=-0.05): */
+                +10075*(int)rgbA[x*3+y*5760 -5762] -11274*(int)rgbA[x*3+y*5760 -5759]   -285*(int)rgbA[x*3+y*5760 -5756]
+                 +5631*(int)rgbA[x*3+y*5760    -2]  -3196*(int)rgbA[x*3+y*5760    +1]    +27*(int)rgbA[x*3+y*5760    +4]
+                 -3371*(int)rgbA[x*3+y*5760 +5758]  +2072*(int)rgbA[x*3+y*5760 +5761]   -123*(int)rgbA[x*3+y*5760 +5764]
+               /* from frame A, blue (sum=-0.02): */
+                -10657*(int)rgbA[x*3+y*5760 -5761] +10550*(int)rgbA[x*3+y*5760 -5758]   -217*(int)rgbA[x*3+y*5760 -5755]
+                 -3270*(int)rgbA[x*3+y*5760    -1]  +2557*(int)rgbA[x*3+y*5760    +2]  +1175*(int)rgbA[x*3+y*5760    +5]
+                 +1984*(int)rgbA[x*3+y*5760 +5759]  -3192*(int)rgbA[x*3+y*5760 +5762]   +884*(int)rgbA[x*3+y*5760 +5765]
+            ) : (  /* even columns: */
+               /* from frame A, red (sum=1.09): */
+                   -92*(int)rgbA[x*3+y*5760 -5763]    -11*(int)rgbA[x*3+y*5760 -5760]  +1024*(int)rgbA[x*3+y*5760 -5757]
+                  +179*(int)rgbA[x*3+y*5760    -3]   +151*(int)rgbA[x*3+y*5760    +0]  +6731*(int)rgbA[x*3+y*5760    +3]
+                   -59*(int)rgbA[x*3+y*5760 +5757]    +96*(int)rgbA[x*3+y*5760 +5760]   +888*(int)rgbA[x*3+y*5760 +5763]
+               /* from frame A, green (sum=-0.07): */
+                  -280*(int)rgbA[x*3+y*5760 -5762]  -1593*(int)rgbA[x*3+y*5760 -5759]  +1305*(int)rgbA[x*3+y*5760 -5756]
+                  +430*(int)rgbA[x*3+y*5760    -2]  +1941*(int)rgbA[x*3+y*5760    +1]  -1729*(int)rgbA[x*3+y*5760    +4]
+                  -265*(int)rgbA[x*3+y*5760 +5758]  -1127*(int)rgbA[x*3+y*5760 +5761]   +736*(int)rgbA[x*3+y*5760 +5764]
+               /* from frame A, blue (sum=-0.01): */
+                    -4*(int)rgbA[x*3+y*5760 -5761]  +1161*(int)rgbA[x*3+y*5760 -5758]  -1328*(int)rgbA[x*3+y*5760 -5755]
+                  +102*(int)rgbA[x*3+y*5760    -1]   -905*(int)rgbA[x*3+y*5760    +2]   +906*(int)rgbA[x*3+y*5760    +5]
+                  -130*(int)rgbA[x*3+y*5760 +5759]   +621*(int)rgbA[x*3+y*5760 +5762]   -544*(int)rgbA[x*3+y*5760 +5765]
+            );
+            int green1 = (x % 2)
+              ? (  /* odd columns: */
+               /* from frame A, red (sum=0.10): */
+                   +14*(int)rgbA[x*3+y*5760 -5763]    +24*(int)rgbA[x*3+y*5760 -5760]    -36*(int)rgbA[x*3+y*5760 -5757]
+                 +1234*(int)rgbA[x*3+y*5760    -3]   -759*(int)rgbA[x*3+y*5760    +0]   +303*(int)rgbA[x*3+y*5760    +3]
+                  -268*(int)rgbA[x*3+y*5760 +5757]   +382*(int)rgbA[x*3+y*5760 +5760]   -101*(int)rgbA[x*3+y*5760 +5763]
+               /* from frame A, green (sum=0.84): */
+                 -2042*(int)rgbA[x*3+y*5760 -5762]  +2099*(int)rgbA[x*3+y*5760 -5759]    -50*(int)rgbA[x*3+y*5760 -5756]
+                 -3511*(int)rgbA[x*3+y*5760    -2] +10068*(int)rgbA[x*3+y*5760    +1]   +303*(int)rgbA[x*3+y*5760    +4]
+                  -585*(int)rgbA[x*3+y*5760 +5758]   +732*(int)rgbA[x*3+y*5760 +5761]    -93*(int)rgbA[x*3+y*5760 +5764]
+               /* from frame A, blue (sum=0.06): */
+                 +1774*(int)rgbA[x*3+y*5760 -5761]  -1672*(int)rgbA[x*3+y*5760 -5758]   -177*(int)rgbA[x*3+y*5760 -5755]
+                 +2525*(int)rgbA[x*3+y*5760    -1]  -1579*(int)rgbA[x*3+y*5760    +2]   -286*(int)rgbA[x*3+y*5760    +5]
+                  +672*(int)rgbA[x*3+y*5760 +5759]   -751*(int)rgbA[x*3+y*5760 +5762]     -8*(int)rgbA[x*3+y*5760 +5765]
+            ) : (  /* even columns: */
+               /* from frame A, red (sum=0.10): */
+                  -360*(int)rgbA[x*3+y*5760 -5763]   -103*(int)rgbA[x*3+y*5760 -5760]   -311*(int)rgbA[x*3+y*5760 -5757]
+                  -814*(int)rgbA[x*3+y*5760    -3]  -2733*(int)rgbA[x*3+y*5760    +0]  +5740*(int)rgbA[x*3+y*5760    +3]
+                  -165*(int)rgbA[x*3+y*5760 +5757]   +346*(int)rgbA[x*3+y*5760 +5760]   -806*(int)rgbA[x*3+y*5760 +5763]
+               /* from frame A, green (sum=0.84): */
+                   +60*(int)rgbA[x*3+y*5760 -5762]  +1581*(int)rgbA[x*3+y*5760 -5759]  -1076*(int)rgbA[x*3+y*5760 -5756]
+                  -436*(int)rgbA[x*3+y*5760    -2] +14847*(int)rgbA[x*3+y*5760    +1]  -8424*(int)rgbA[x*3+y*5760    +4]
+                   -61*(int)rgbA[x*3+y*5760 +5758]  +1631*(int)rgbA[x*3+y*5760 +5761]  -1209*(int)rgbA[x*3+y*5760 +5764]
+               /* from frame A, blue (sum=0.06): */
+                    +2*(int)rgbA[x*3+y*5760 -5761]   -468*(int)rgbA[x*3+y*5760 -5758]   +633*(int)rgbA[x*3+y*5760 -5755]
+                  +478*(int)rgbA[x*3+y*5760    -1]  -3411*(int)rgbA[x*3+y*5760    +2]  +3039*(int)rgbA[x*3+y*5760    +5]
+                  +171*(int)rgbA[x*3+y*5760 +5759]  -1180*(int)rgbA[x*3+y*5760 +5762]  +1243*(int)rgbA[x*3+y*5760 +5765]
+            );
+            int green2 = (x % 2)
+              ? (  /* odd columns: */
+               /* from frame A, red (sum=0.09): */
+                 -2896*(int)rgbA[x*3+y*5760 -5763]  +3212*(int)rgbA[x*3+y*5760 -5760]   -136*(int)rgbA[x*3+y*5760 -5757]
+                 -1120*(int)rgbA[x*3+y*5760    -3]  +2324*(int)rgbA[x*3+y*5760    +0]   -241*(int)rgbA[x*3+y*5760    +3]
+                  -182*(int)rgbA[x*3+y*5760 +5757]   -154*(int)rgbA[x*3+y*5760 +5760]    -71*(int)rgbA[x*3+y*5760 +5763]
+               /* from frame A, green (sum=0.85): */
+                +17002*(int)rgbA[x*3+y*5760 -5762] -13450*(int)rgbA[x*3+y*5760 -5759]   -271*(int)rgbA[x*3+y*5760 -5756]
+                 +3962*(int)rgbA[x*3+y*5760    -2]   -121*(int)rgbA[x*3+y*5760    +1]   -622*(int)rgbA[x*3+y*5760    +4]
+                 +1202*(int)rgbA[x*3+y*5760 +5758]   -883*(int)rgbA[x*3+y*5760 +5761]   +116*(int)rgbA[x*3+y*5760 +5764]
+               /* from frame A, blue (sum=0.07): */
+                -12580*(int)rgbA[x*3+y*5760 -5761] +12315*(int)rgbA[x*3+y*5760 -5758]   -856*(int)rgbA[x*3+y*5760 -5755]
+                  +109*(int)rgbA[x*3+y*5760    -1]   +590*(int)rgbA[x*3+y*5760    +2]  +2883*(int)rgbA[x*3+y*5760    +5]
+                 -1737*(int)rgbA[x*3+y*5760 +5759]   +973*(int)rgbA[x*3+y*5760 +5762]  -1115*(int)rgbA[x*3+y*5760 +5765]
+            ) : (  /* even columns: */
+               /* from frame A, red (sum=0.09): */
+                 -1008*(int)rgbA[x*3+y*5760 -5763]   -329*(int)rgbA[x*3+y*5760 -5760]  +1416*(int)rgbA[x*3+y*5760 -5757]
+                    +7*(int)rgbA[x*3+y*5760    -3]  -1305*(int)rgbA[x*3+y*5760    +0]  +3108*(int)rgbA[x*3+y*5760    +3]
+                   -56*(int)rgbA[x*3+y*5760 +5757]  +1127*(int)rgbA[x*3+y*5760 +5760]  -2234*(int)rgbA[x*3+y*5760 +5763]
+               /* from frame A, green (sum=0.84): */
+                 +1382*(int)rgbA[x*3+y*5760 -5762]  +7377*(int)rgbA[x*3+y*5760 -5759]  -5458*(int)rgbA[x*3+y*5760 -5756]
+                 +1311*(int)rgbA[x*3+y*5760    -2]  +4781*(int)rgbA[x*3+y*5760    +1]  -3425*(int)rgbA[x*3+y*5760    +4]
+                  +535*(int)rgbA[x*3+y*5760 +5758]  +4226*(int)rgbA[x*3+y*5760 +5761]  -3838*(int)rgbA[x*3+y*5760 +5764]
+               /* from frame A, blue (sum=0.08): */
+                  +346*(int)rgbA[x*3+y*5760 -5761]  -5040*(int)rgbA[x*3+y*5760 -5758]  +3716*(int)rgbA[x*3+y*5760 -5755]
+                 +1163*(int)rgbA[x*3+y*5760    -1]   +795*(int)rgbA[x*3+y*5760    +2]  +1316*(int)rgbA[x*3+y*5760    +5]
+                  -308*(int)rgbA[x*3+y*5760 +5759]  -6019*(int)rgbA[x*3+y*5760 +5762]  +4667*(int)rgbA[x*3+y*5760 +5765]
+            );
+            int blue = (x % 2)
+              ? (  /* odd columns: */
+               /* from frame A, red (sum=-0.02): */
+                   -65*(int)rgbA[x*3+y*5760 -5763]    -39*(int)rgbA[x*3+y*5760 -5760]    +72*(int)rgbA[x*3+y*5760 -5757]
+                   -52*(int)rgbA[x*3+y*5760    -3]   +113*(int)rgbA[x*3+y*5760    +0]   -209*(int)rgbA[x*3+y*5760    +3]
+                    -3*(int)rgbA[x*3+y*5760 +5757]    +71*(int)rgbA[x*3+y*5760 +5760]    -17*(int)rgbA[x*3+y*5760 +5763]
+               /* from frame A, green (sum=-0.02): */
+                 +1355*(int)rgbA[x*3+y*5760 -5762]  -1167*(int)rgbA[x*3+y*5760 -5759]   +198*(int)rgbA[x*3+y*5760 -5756]
+                  -723*(int)rgbA[x*3+y*5760    -2]  +1079*(int)rgbA[x*3+y*5760    +1]   -518*(int)rgbA[x*3+y*5760    +4]
+                  +798*(int)rgbA[x*3+y*5760 +5758]  -1275*(int)rgbA[x*3+y*5760 +5761]    +72*(int)rgbA[x*3+y*5760 +5764]
+               /* from frame A, blue (sum=1.04): */
+                 -1651*(int)rgbA[x*3+y*5760 -5761]  +1388*(int)rgbA[x*3+y*5760 -5758]   +403*(int)rgbA[x*3+y*5760 -5755]
+                 +1285*(int)rgbA[x*3+y*5760    -1]   -486*(int)rgbA[x*3+y*5760    +2]  +6693*(int)rgbA[x*3+y*5760    +5]
+                 -1136*(int)rgbA[x*3+y*5760 +5759]   +884*(int)rgbA[x*3+y*5760 +5762]  +1126*(int)rgbA[x*3+y*5760 +5765]
+            ) : (  /* even columns: */
+               /* from frame A, red (sum=-0.02): */
+                 -1044*(int)rgbA[x*3+y*5760 -5763]  -1636*(int)rgbA[x*3+y*5760 -5760]  +2333*(int)rgbA[x*3+y*5760 -5757]
+                  -560*(int)rgbA[x*3+y*5760    -3]  -2798*(int)rgbA[x*3+y*5760    +0]  +3900*(int)rgbA[x*3+y*5760    +3]
+                  +257*(int)rgbA[x*3+y*5760 +5757]  +1706*(int)rgbA[x*3+y*5760 +5760]  -2344*(int)rgbA[x*3+y*5760 +5763]
+               /* from frame A, green (sum=0.00): */
+                 -1397*(int)rgbA[x*3+y*5760 -5762] +17448*(int)rgbA[x*3+y*5760 -5759] -15127*(int)rgbA[x*3+y*5760 -5756]
+                 -2020*(int)rgbA[x*3+y*5760    -2]  +8690*(int)rgbA[x*3+y*5760    +1]  -7077*(int)rgbA[x*3+y*5760    +4]
+                  -277*(int)rgbA[x*3+y*5760 +5758]  +4598*(int)rgbA[x*3+y*5760 +5761]  -4829*(int)rgbA[x*3+y*5760 +5764]
+               /* from frame A, blue (sum=1.02): */
+                  -404*(int)rgbA[x*3+y*5760 -5761] -12273*(int)rgbA[x*3+y*5760 -5758] +13040*(int)rgbA[x*3+y*5760 -5755]
+                 +1111*(int)rgbA[x*3+y*5760    -1]   +555*(int)rgbA[x*3+y*5760    +2]  +4552*(int)rgbA[x*3+y*5760    +5]
+                  -593*(int)rgbA[x*3+y*5760 +5759]  -4139*(int)rgbA[x*3+y*5760 +5762]  +6470*(int)rgbA[x*3+y*5760 +5765]
+            );
+            
+            raw[2*x+0 + (2*y+1) * (2*width)] = COERCE(red    / 8192, 0, 65535);
+            raw[2*x+1 + (2*y+1) * (2*width)] = COERCE(green1 / 8192, 0, 65535);
+            raw[2*x+0 + (2*y+0) * (2*width)] = COERCE(green2 / 8192, 0, 65535);
+            raw[2*x+1 + (2*y+0) * (2*width)] = COERCE(blue   / 8192, 0, 65535);
+        }
+    }
+}
+
+static void recover_bayer_data_3x3_only_B_brute_force(uint16_t* raw, uint16_t* rgbA, uint16_t* rgbB)
+{
+    #pragma omp parallel for
+    for (int y = 2; y < height-2; y++)
+    {
+        for (int x = 2; x < width-2; x++)
+        {
+            int red = (x % 2)
+              ? (  /* odd columns: */
+               /* from frame B, red (sum=1.09): */
+                 +2806*(int)rgbB[x*3+y*5760 -5763]  -2077*(int)rgbB[x*3+y*5760 -5760]   -194*(int)rgbB[x*3+y*5760 -5757]
+                 -3601*(int)rgbB[x*3+y*5760    -3] +11267*(int)rgbB[x*3+y*5760    +0]   +594*(int)rgbB[x*3+y*5760    +3]
+                 +5598*(int)rgbB[x*3+y*5760 +5757]  -5274*(int)rgbB[x*3+y*5760 +5760]   -216*(int)rgbB[x*3+y*5760 +5763]
+               /* from frame B, green (sum=-0.07): */
+                 -2511*(int)rgbB[x*3+y*5760 -5762]  +2206*(int)rgbB[x*3+y*5760 -5759]    -76*(int)rgbB[x*3+y*5760 -5756]
+                 +3061*(int)rgbB[x*3+y*5760    -2]  -3442*(int)rgbB[x*3+y*5760    +1]    +30*(int)rgbB[x*3+y*5760    +4]
+                 -5386*(int)rgbB[x*3+y*5760 +5758]  +5592*(int)rgbB[x*3+y*5760 +5761]    -53*(int)rgbB[x*3+y*5760 +5764]
+               /* from frame B, blue (sum=-0.01): */
+                  -456*(int)rgbB[x*3+y*5760 -5761]   +398*(int)rgbB[x*3+y*5760 -5758]   +146*(int)rgbB[x*3+y*5760 -5755]
+                  +853*(int)rgbB[x*3+y*5760    -1]   -989*(int)rgbB[x*3+y*5760    +2]    -89*(int)rgbB[x*3+y*5760    +5]
+                  -315*(int)rgbB[x*3+y*5760 +5759]   +410*(int)rgbB[x*3+y*5760 +5762]    -78*(int)rgbB[x*3+y*5760 +5765]
+            ) : (  /* even columns: */
+               /* from frame B, red (sum=1.09): */
+                  +627*(int)rgbB[x*3+y*5760 -5763]  +3953*(int)rgbB[x*3+y*5760 -5760]  -3573*(int)rgbB[x*3+y*5760 -5757]
+                 +2987*(int)rgbB[x*3+y*5760    -3]  +7678*(int)rgbB[x*3+y*5760    +0]  -2987*(int)rgbB[x*3+y*5760    +3]
+                  -233*(int)rgbB[x*3+y*5760 +5757] -12878*(int)rgbB[x*3+y*5760 +5760] +13343*(int)rgbB[x*3+y*5760 +5763]
+               /* from frame B, green (sum=-0.07): */
+                  -293*(int)rgbB[x*3+y*5760 -5762]  -4011*(int)rgbB[x*3+y*5760 -5759]  +3484*(int)rgbB[x*3+y*5760 -5756]
+                 -1575*(int)rgbB[x*3+y*5760    -2]  -2070*(int)rgbB[x*3+y*5760    +1]  +3928*(int)rgbB[x*3+y*5760    +4]
+                  -588*(int)rgbB[x*3+y*5760 +5758] +15661*(int)rgbB[x*3+y*5760 +5761] -15133*(int)rgbB[x*3+y*5760 +5764]
+               /* from frame B, blue (sum=-0.01): */
+                   +57*(int)rgbB[x*3+y*5760 -5761]    -20*(int)rgbB[x*3+y*5760 -5758]   +262*(int)rgbB[x*3+y*5760 -5755]
+                  -342*(int)rgbB[x*3+y*5760    -1]  -1108*(int)rgbB[x*3+y*5760    +2]   +595*(int)rgbB[x*3+y*5760    +5]
+                  +117*(int)rgbB[x*3+y*5760 +5759]   -430*(int)rgbB[x*3+y*5760 +5762]   +755*(int)rgbB[x*3+y*5760 +5765]
+            );
+            int green1 = (x % 2)
+              ? (  /* odd columns: */
+               /* from frame B, red (sum=0.11): */
+                -10867*(int)rgbB[x*3+y*5760 -5763]  +9525*(int)rgbB[x*3+y*5760 -5760]   -712*(int)rgbB[x*3+y*5760 -5757]
+                 +4081*(int)rgbB[x*3+y*5760    -3]  -1403*(int)rgbB[x*3+y*5760    +0]  +1662*(int)rgbB[x*3+y*5760    +3]
+                 -6380*(int)rgbB[x*3+y*5760 +5757]  +5034*(int)rgbB[x*3+y*5760 +5760]    -76*(int)rgbB[x*3+y*5760 +5763]
+               /* from frame B, green (sum=0.85): */
+                +11399*(int)rgbB[x*3+y*5760 -5762] -10979*(int)rgbB[x*3+y*5760 -5759]     +6*(int)rgbB[x*3+y*5760 -5756]
+                 -4744*(int)rgbB[x*3+y*5760    -2]  +5890*(int)rgbB[x*3+y*5760    +1]  +2075*(int)rgbB[x*3+y*5760    +4]
+                 +6370*(int)rgbB[x*3+y*5760 +5758]  -4265*(int)rgbB[x*3+y*5760 +5761]  +1197*(int)rgbB[x*3+y*5760 +5764]
+               /* from frame B, blue (sum=0.04): */
+                  -619*(int)rgbB[x*3+y*5760 -5761]   +736*(int)rgbB[x*3+y*5760 -5758]   -130*(int)rgbB[x*3+y*5760 -5755]
+                  +263*(int)rgbB[x*3+y*5760    -1]   -184*(int)rgbB[x*3+y*5760    +2]   -401*(int)rgbB[x*3+y*5760    +5]
+                  -248*(int)rgbB[x*3+y*5760 +5759]  +1062*(int)rgbB[x*3+y*5760 +5762]   -127*(int)rgbB[x*3+y*5760 +5765]
+            ) : (  /* even columns: */
+               /* from frame B, red (sum=0.11): */
+                  -751*(int)rgbB[x*3+y*5760 -5763]   +176*(int)rgbB[x*3+y*5760 -5760]  -1441*(int)rgbB[x*3+y*5760 -5757]
+                  +860*(int)rgbB[x*3+y*5760    -3] -13778*(int)rgbB[x*3+y*5760    +0] +17371*(int)rgbB[x*3+y*5760    +3]
+                 -1003*(int)rgbB[x*3+y*5760 +5757]  +7502*(int)rgbB[x*3+y*5760 +5760]  -8048*(int)rgbB[x*3+y*5760 +5763]
+               /* from frame B, green (sum=0.84): */
+                  +284*(int)rgbB[x*3+y*5760 -5762]   +600*(int)rgbB[x*3+y*5760 -5759]   -139*(int)rgbB[x*3+y*5760 -5756]
+                  -465*(int)rgbB[x*3+y*5760    -2] +14198*(int)rgbB[x*3+y*5760    +1] -10834*(int)rgbB[x*3+y*5760    +4]
+                  +102*(int)rgbB[x*3+y*5760 +5758]  -9142*(int)rgbB[x*3+y*5760 +5761] +12279*(int)rgbB[x*3+y*5760 +5764]
+               /* from frame B, blue (sum=0.05): */
+                    +1*(int)rgbB[x*3+y*5760 -5761]  -1113*(int)rgbB[x*3+y*5760 -5758]   +629*(int)rgbB[x*3+y*5760 -5755]
+                  -378*(int)rgbB[x*3+y*5760    -1]  +3183*(int)rgbB[x*3+y*5760    +2]  -2765*(int)rgbB[x*3+y*5760    +5]
+                   -88*(int)rgbB[x*3+y*5760 +5759]  +4746*(int)rgbB[x*3+y*5760 +5762]  -3799*(int)rgbB[x*3+y*5760 +5765]
+            );
+            int green2 = (x % 2)
+              ? (  /* odd columns: */
+               /* from frame B, red (sum=0.10): */
+                 -1196*(int)rgbB[x*3+y*5760 -5763]  +1331*(int)rgbB[x*3+y*5760 -5760]    -65*(int)rgbB[x*3+y*5760 -5757]
+                 +2363*(int)rgbB[x*3+y*5760    -3]  -1669*(int)rgbB[x*3+y*5760    +0]    +30*(int)rgbB[x*3+y*5760    +3]
+                  -680*(int)rgbB[x*3+y*5760 +5757]   +667*(int)rgbB[x*3+y*5760 +5760]    +12*(int)rgbB[x*3+y*5760 +5763]
+               /* from frame B, green (sum=0.85): */
+                 +1137*(int)rgbB[x*3+y*5760 -5762]   -943*(int)rgbB[x*3+y*5760 -5759]     -1*(int)rgbB[x*3+y*5760 -5756]
+                 -4107*(int)rgbB[x*3+y*5760    -2] +10432*(int)rgbB[x*3+y*5760    +1]   +150*(int)rgbB[x*3+y*5760    +4]
+                  +547*(int)rgbB[x*3+y*5760 +5758]   -269*(int)rgbB[x*3+y*5760 +5761]    -22*(int)rgbB[x*3+y*5760 +5764]
+               /* from frame B, blue (sum=0.06): */
+                  -199*(int)rgbB[x*3+y*5760 -5761]    -12*(int)rgbB[x*3+y*5760 -5758]   -125*(int)rgbB[x*3+y*5760 -5755]
+                 +2096*(int)rgbB[x*3+y*5760    -1]   -827*(int)rgbB[x*3+y*5760    +2]   -116*(int)rgbB[x*3+y*5760    +5]
+                  -117*(int)rgbB[x*3+y*5760 +5759]    -89*(int)rgbB[x*3+y*5760 +5762]   -117*(int)rgbB[x*3+y*5760 +5765]
+            ) : (  /* even columns: */
+               /* from frame B, red (sum=0.10): */
+                  -232*(int)rgbB[x*3+y*5760 -5763]  +1433*(int)rgbB[x*3+y*5760 -5760]  -1463*(int)rgbB[x*3+y*5760 -5757]
+                  -774*(int)rgbB[x*3+y*5760    -3]  -8509*(int)rgbB[x*3+y*5760    +0] +10458*(int)rgbB[x*3+y*5760    +3]
+                    +9*(int)rgbB[x*3+y*5760 +5757]  +8609*(int)rgbB[x*3+y*5760 +5760]  -8742*(int)rgbB[x*3+y*5760 +5763]
+               /* from frame B, green (sum=0.85): */
+                   -39*(int)rgbB[x*3+y*5760 -5762]  -1273*(int)rgbB[x*3+y*5760 -5759]  +1494*(int)rgbB[x*3+y*5760 -5756]
+                  +697*(int)rgbB[x*3+y*5760    -2] +16856*(int)rgbB[x*3+y*5760    +1] -10761*(int)rgbB[x*3+y*5760    +4]
+                   +73*(int)rgbB[x*3+y*5760 +5758]  -9331*(int)rgbB[x*3+y*5760 +5761]  +9224*(int)rgbB[x*3+y*5760 +5764]
+               /* from frame B, blue (sum=0.06): */
+                   -40*(int)rgbB[x*3+y*5760 -5761]   +315*(int)rgbB[x*3+y*5760 -5758]   -266*(int)rgbB[x*3+y*5760 -5755]
+                  +169*(int)rgbB[x*3+y*5760    -1]    -38*(int)rgbB[x*3+y*5760    +2]   +305*(int)rgbB[x*3+y*5760    +5]
+                   -41*(int)rgbB[x*3+y*5760 +5759]   +486*(int)rgbB[x*3+y*5760 +5762]   -410*(int)rgbB[x*3+y*5760 +5765]
+            );
+            int blue = (x % 2)
+              ? (  /* odd columns: */
+               /* from frame B, red (sum=-0.02): */
+                -14404*(int)rgbB[x*3+y*5760 -5763] +14762*(int)rgbB[x*3+y*5760 -5760]   -197*(int)rgbB[x*3+y*5760 -5757]
+                 +6498*(int)rgbB[x*3+y*5760    -3]  -6797*(int)rgbB[x*3+y*5760    +0]   +277*(int)rgbB[x*3+y*5760    +3]
+                 +1906*(int)rgbB[x*3+y*5760 +5757]  -2214*(int)rgbB[x*3+y*5760 +5760]    +39*(int)rgbB[x*3+y*5760 +5763]
+               /* from frame B, green (sum=-0.02): */
+                +14144*(int)rgbB[x*3+y*5760 -5762] -15018*(int)rgbB[x*3+y*5760 -5759]   -364*(int)rgbB[x*3+y*5760 -5756]
+                 -6354*(int)rgbB[x*3+y*5760    -2]  +7820*(int)rgbB[x*3+y*5760    +1]   +901*(int)rgbB[x*3+y*5760    +4]
+                  -907*(int)rgbB[x*3+y*5760 +5758]   +572*(int)rgbB[x*3+y*5760 +5761]   -927*(int)rgbB[x*3+y*5760 +5764]
+               /* from frame B, blue (sum=1.03): */
+                  +629*(int)rgbB[x*3+y*5760 -5761]   +558*(int)rgbB[x*3+y*5760 -5758]   +678*(int)rgbB[x*3+y*5760 -5755]
+                  +885*(int)rgbB[x*3+y*5760    -1]  +1904*(int)rgbB[x*3+y*5760    +2]  +1589*(int)rgbB[x*3+y*5760    +5]
+                  -189*(int)rgbB[x*3+y*5760 +5759]  +1584*(int)rgbB[x*3+y*5760 +5762]   +809*(int)rgbB[x*3+y*5760 +5765]
+            ) : (  /* even columns: */
+               /* from frame B, red (sum=-0.01): */
+                   +66*(int)rgbB[x*3+y*5760 -5763]  +3419*(int)rgbB[x*3+y*5760 -5760]  -3353*(int)rgbB[x*3+y*5760 -5757]
+                  -151*(int)rgbB[x*3+y*5760    -3] -11175*(int)rgbB[x*3+y*5760    +0] +11212*(int)rgbB[x*3+y*5760    +3]
+                   +98*(int)rgbB[x*3+y*5760 +5757]  +8215*(int)rgbB[x*3+y*5760 +5760]  -8453*(int)rgbB[x*3+y*5760 +5763]
+               /* from frame B, green (sum=-0.03): */
+                  -110*(int)rgbB[x*3+y*5760 -5762]  -3246*(int)rgbB[x*3+y*5760 -5759]  +2744*(int)rgbB[x*3+y*5760 -5756]
+                  +137*(int)rgbB[x*3+y*5760    -2] +10763*(int)rgbB[x*3+y*5760    +1]  -9941*(int)rgbB[x*3+y*5760    +4]
+                   -79*(int)rgbB[x*3+y*5760 +5758]  -8284*(int)rgbB[x*3+y*5760 +5761]  +7808*(int)rgbB[x*3+y*5760 +5764]
+               /* from frame B, blue (sum=1.04): */
+                   -76*(int)rgbB[x*3+y*5760 -5761]   +677*(int)rgbB[x*3+y*5760 -5758]   +302*(int)rgbB[x*3+y*5760 -5755]
+                  +282*(int)rgbB[x*3+y*5760    -1]  +6696*(int)rgbB[x*3+y*5760    +2]   -401*(int)rgbB[x*3+y*5760    +5]
+                   -57*(int)rgbB[x*3+y*5760 +5759]   +909*(int)rgbB[x*3+y*5760 +5762]   +200*(int)rgbB[x*3+y*5760 +5765]
+            );
+            
+            raw[2*x+0 + (2*y+1) * (2*width)] = COERCE(red    / 8192, 0, 65535);
+            raw[2*x+1 + (2*y+1) * (2*width)] = COERCE(green1 / 8192, 0, 65535);
+            raw[2*x+0 + (2*y+0) * (2*width)] = COERCE(green2 / 8192, 0, 65535);
+            raw[2*x+1 + (2*y+0) * (2*width)] = COERCE(blue   / 8192, 0, 65535);
+        }
+    }
+}
+
 /* recover raw data by filtering the two HDMI frames: rgbA and rgbB */
 static void recover_raw_data(uint16_t* raw, uint16_t* rgbA, uint16_t* rgbB)
 {
@@ -1030,7 +1292,15 @@ static void recover_raw_data(uint16_t* raw, uint16_t* rgbA, uint16_t* rgbB)
         }
     }
 
-    if (filter_size == 3)
+    if (only_A)
+    {
+        recover_bayer_data_3x3_only_A_brute_force(raw, rgbA, rgbB);
+    }
+    else if (only_B)
+    {
+        recover_bayer_data_3x3_only_B_brute_force(raw, rgbA, rgbB);
+    }
+    else if (filter_size == 3)
     {
         recover_bayer_channel_3(0, 0, raw, rgbA, rgbB);
         recover_bayer_channel_3(0, 1, raw, rgbA, rgbB);
