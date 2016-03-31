@@ -47,15 +47,16 @@ uint16_t* dark;
 
 int filter_size = 5;
 int output_stdout = 0;
-int skip_frame = 0;
+int skip_frames = 0;
 int swap_frames = 0;
+int skip_frame_toggle = 0;
 
 struct cmd_group options[] = {
     {
         "Options", (struct cmd_option[]) {
            { &output_stdout,     1,      "-",        "Output PGM to stdout (can be piped to raw2dng)" },
            { &filter_size,       3,      "--3x3",    "Use 3x3 filters to recover detail (default 5x5)" },
-           { &skip_frame,        1,      "--skip",   "Toggle skipping one frame (try if A/B autodetection fails)" },
+           { &skip_frame_toggle, 1,      "--skip",   "Toggle skipping one frame (try if A/B autodetection fails)" },
            { &swap_frames,       1,      "--swap",   "Swap A and B frames inside a frame pair (encoding bug?)" },
            OPTION_EOL,
         },
@@ -1043,7 +1044,7 @@ static void recover_raw_data(uint16_t* raw, uint16_t* rgbA, uint16_t* rgbB)
 }
 
 /* return: 1 = ok, 0 = bad, -1 = retry */
-int check_frame_pairs(uint16_t* rgbA, uint16_t* rgbB, uint16_t* rgbC)
+static int check_frame_pairs(uint16_t* rgbA, uint16_t* rgbB, uint16_t* rgbC, int skipped_frames)
 {
     /*
      * rgbA: R, G1, B
@@ -1074,27 +1075,31 @@ int check_frame_pairs(uint16_t* rgbA, uint16_t* rgbB, uint16_t* rgbC)
     
     if (ab == 0 || bc == 0 || ac == 0)
     {
-        int a = (bc == 0) ? 1 : 0;
-        int b = (ab == 0) ? 1 : 2;
-        fprintf(stderr, "Frames %d and %d are identical (cannot check frame pairs).\n", a+1, b+1);
+        int a = ((bc == 0) ? 2 : 1) + skipped_frames;
+        int b = ((ab == 0) ? 2 : 3) + skipped_frames;
+        fprintf(stderr, "Frames %d and %d are identical.\n", a, b);
         return -1;
     }
         
-    fprintf(stderr, "Frame deltas : (1-2):%.3g, (2-3):%.3g\n", (double) ab, (double) bc);
+    fprintf(stderr,
+        "Frame deltas : (%d-%d):%.3g, (%d-%d):%.3g\n",
+        1 + skipped_frames, 2 + skipped_frames, (double) ab,
+        2 + skipped_frames, 3 + skipped_frames, (double) bc
+    );
     
     if (ab > bc)
     {
-        fprintf(stderr, "Frames 2 and 3 match (should skip one frame).\n");
+        fprintf(stderr, "Frames %d and %d match (should skip one frame).\n", 2 + skipped_frames, 3 + skipped_frames);
         return 0;
     }
     else
     {
-        fprintf(stderr, "Frames 1 and 2 match (OK).\n");
+        fprintf(stderr, "Frames %d and %d match (OK).\n", 1 + skip_frames, 2 + skip_frames);
         return 1;
     }
 }
 
-int check_frame_order(uint16_t* rgbA, uint16_t* rgbB)
+static int check_frame_order(uint16_t* rgbA, uint16_t* rgbB)
 {
     /* check which frame is A and which is B
      * by looking at the green pixels:
@@ -1187,32 +1192,73 @@ int main(int argc, char** argv)
             if (!pipe)
             {
                 char cmd[1000];
-                int skip_frame = 0;
-                
+
                 /* read 3 frames to check the frame order (A/B) */
                 {
-                    snprintf(cmd, sizeof(cmd), "ffmpeg -i '%s' -f image2pipe -vcodec ppm -vframes 3 - -loglevel warning -hide_banner", argv[k]);
+                    snprintf(cmd, sizeof(cmd), "ffmpeg -i '%s' -f image2pipe -vcodec ppm -vframes 16 - -loglevel warning -hide_banner", argv[k]);
                     fprintf(stderr, "%s\n", cmd);
                     FILE* pipe = popen(cmd, "r");
                     CHECK(pipe, "ffmpeg");
                     uint16_t* rgbC = 0;
-                    read_ppm_stream(pipe, &rgbA);
-                    read_ppm_stream(pipe, &rgbB);
-                    read_ppm_stream(pipe, &rgbC);
-                    pclose(pipe); pipe = 0;
-                    if (check_frame_pairs(rgbA, rgbB, rgbC) == 0)
+                    int result = 0;
+                    int frame_size = 0;
+                    if (!read_ppm_stream(pipe, &rgbA)) goto err;
+                    if (!read_ppm_stream(pipe, &rgbB)) goto err;
+                    if (!read_ppm_stream(pipe, &rgbC)) goto err;
+
+                    frame_size = width * height * 2 * 3;
+
+                    while ((result = check_frame_pairs(rgbA, rgbB, rgbC, skip_frames)) == -1)
                     {
-                        skip_frame = !skip_frame;
+                        /* first few frames identical, try reading one more */
+                        fprintf(stderr, "Skipping frame...\n");
+                        skip_frames++;
+                        memcpy(rgbA, rgbB, frame_size);
+                        memcpy(rgbB, rgbC, frame_size);
+                        free(rgbC); rgbC = 0;
+                        if (!read_ppm_stream(pipe, &rgbC)) goto err;
                     }
 
-                    if (check_frame_order(skip_frame ? rgbB : rgbA, 
-                                          skip_frame ? rgbC : rgbB))
+                    if (0)
+                    {
+                    err:
+                        if (rgbA && rgbB)
+                        {
+                            /* we have at least 2 frames, so we can try a graceful recovery */
+                            fprintf(stderr, "Could not detect frame pairs; hoping for the best.\n");
+                        }
+                        else
+                        {
+                            fprintf(stderr, "Invalid input.\n");
+                            exit(1);
+                        }
+                    }
+
+                    if ((result == 0) ^ (skip_frame_toggle))
+                    {
+                        fprintf(stderr, "Skipping frame...\n");
+                        memcpy(rgbA, rgbB, frame_size);
+                        memcpy(rgbB, rgbC, frame_size);
+                        skip_frames++;
+                    }
+
+                    fprintf(stderr, "Checking frames %d and %d...\n", skip_frames+1, skip_frames+2);
+
+                    if (check_frame_order(rgbA, rgbB))
                     {
                         swap_frames = !swap_frames;
                     }
+
+                    /* empty the pipe */
+                    if (rgbC) { free(rgbC); rgbC = 0; }
+                    while (read_ppm_stream(pipe, &rgbC))
+                    {
+                        free(rgbC); rgbC = 0;
+                    }
+
+                    pclose(pipe); pipe = 0;
                     free(rgbA); rgbA = 0;
                     free(rgbB); rgbB = 0;
-                    free(rgbC); rgbC = 0;
                 }
 
                 /* open the movie again to process all frames */
@@ -1222,7 +1268,8 @@ int main(int argc, char** argv)
                 pipe = popen(cmd, "r");
                 CHECK(pipe, "ffmpeg");
 
-                if (skip_frame)
+                /* we don't need to skip all the frames in the final output */
+                if (skip_frames % 2)
                 {
                     fprintf(stderr, "Skipping one frame...\n");
                     read_ppm_stream(pipe, &rgbA);
