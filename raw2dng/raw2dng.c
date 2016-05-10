@@ -1593,17 +1593,17 @@ static void moving_average_addframe(struct raw_info * raw_info, int16_t * raw16)
 
         for (int i = 0; i < n; i++)
         {
-            M.avg[i] = raw16[i] * 16384;
+            M.avg[i] = raw16[i] * 1024;
         }
     }
         
     /* add current frame to accumulator */
     for (int i = 0; i < n; i++)
     {
-        int pix = raw16[i] * 16384;
+        int pix = raw16[i] * 1024;
         int avg = M.avg[i];
         int dif = ABS(pix - avg);
-        if (dif > 500 * 16384)
+        if (dif > 500 * 1024)
         {
             /* reset moving average if difference gets too high (probably motion) */
             M.avg[i] = pix;
@@ -1625,7 +1625,7 @@ static void fix_pattern_noise_temporally(struct raw_info * raw_info, int16_t * r
     
     for (int i = 0; i < n; i++)
     {
-        avg[i] = (M.avg[i] + 8192) / 16384;
+        avg[i] = (M.avg[i] + 512) / 1024;
     }
     
     fix_pattern_noise_ex(raw_info, raw16, avg, fixpn & 1, fixpn_flags);
