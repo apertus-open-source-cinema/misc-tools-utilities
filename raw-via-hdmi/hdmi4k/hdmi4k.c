@@ -29,8 +29,6 @@
 #include "sys/stat.h"
 #include "math.h"
 #include "cmdoptions.h"
-#include "patternnoise.h"
-#include "ufraw_routines.h"
 #include "omp.h"
 
 /* image data */
