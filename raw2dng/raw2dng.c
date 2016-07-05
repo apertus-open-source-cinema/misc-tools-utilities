@@ -32,6 +32,7 @@
 #include "patternnoise.h"
 #include "metadata.h"
 #include "wirth.h"
+#include "assert.h"
 
 static int16_t Lut_R[4096*8];
 static int16_t Lut_G1[4096*8];
@@ -79,6 +80,7 @@ int rownoise_filter = 0;
 int rownoise_export_octave = 0;
 int dc_hot_pixels = 0;
 int no_processing = 0;
+int pixel_extract_xy[2] = {-1,-1};
 
 int calc_darkframe = 0;
 int calc_clipframe = 0;
@@ -155,6 +157,8 @@ struct cmd_group options[] = {
             { &fixpn_flags1,   FIXPN_DBG_MASK,      "--fixpn-dbg-mask",     "Pattern noise: show masked areas (edges and highlights)" },
             { &fixpn_flags2,   FIXPN_DBG_COLNOISE,  "--fixpn-dbg-col",      "Pattern noise: debug columns (default: rows)" },
             { &rownoise_export_octave, 1,           "--export-rownoise",    "Export row noise data to octave (rownoise_data.m)" },
+            { pixel_extract_xy, 2,                  "--get-pixel:%d,%d",    "Extract one pixel from all input files, at given coordinates,\n"
+                                                      "                      and save it to pixel.csv, including metadata. Skips DNG output." },
             OPTION_EOL,
         },
     },
@@ -1690,6 +1694,8 @@ int main(int argc, char** argv)
             parse_commandline_option(argv[k]);
     show_active_options();
 
+    int pixel_extract = (pixel_extract_xy[0] >= 0) && (pixel_extract_xy[1] >= 0);
+
     char dark_filename[20];
     char dcnu_filename[20];
     char gain_filename[20];
@@ -1915,7 +1921,7 @@ int main(int argc, char** argv)
         int raw16_postprocessing = (raw16 ||
              calc_darkframe || calc_dcnuframe || calc_gainframe || calc_clipframe ||
              use_darkframe  || use_gainframe  || use_clipframe  || check_darkframe ||
-             use_lut || fixpn);
+             use_lut || fixpn || pixel_extract);
 
         if (raw16_postprocessing && !raw16)
         {
@@ -2044,6 +2050,39 @@ int main(int argc, char** argv)
         if (check_darkframe)
         {
             check_darkframe_iq(&raw_info, raw16);
+        }
+
+        if (pixel_extract)
+        {
+            int x = pixel_extract_xy[0];
+            int y = pixel_extract_xy[1];
+            int w = raw_info.width;
+            int h = raw_info.height;
+            assert(x > 0 && x < w);
+            assert(y > 0 && y < h);
+            int p = raw16[x + y*w];
+            static int first_run = 1;
+            FILE* f = 0;
+            if (first_run)
+            {
+                f = fopen("pixel.csv", "w");
+                CHECK(f, "pixel.csv");
+                fprintf(f, "# Pixel values at (%d,%d): filename, DN, gain, exposure time\n", x, y);
+                fprintf(f, "# Octave: dlmread('pixel.csv','\t',2,0);\n");
+                first_run = 0;
+            }
+            else
+            {
+                f = fopen("pixel.csv", "a");
+            }
+
+            fprintf(f, "\"%s\"\t%g\t%d\t%g\n", argv[k], p/8.0, meta_gain, meta_expo);
+            printf("P(%4d,%4d): %.1f\n", x, y, p/8.0);
+            fclose(f);
+
+            /* skip output */
+            free(raw16); raw16 = 0;
+            goto cleanup;
         }
 
         if (raw16_postprocessing)
