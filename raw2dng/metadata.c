@@ -212,12 +212,20 @@ static void print_plr_settings(uint16_t registers[128])
         
         if (vtfl2_en)
         {
-            printf("Knee point 1: %g ms from %d%% (vtfl2=%d)\n", exp_kp1, (63-vtfl2)*100/63, vtfl2);
+            printf("Knee point 1: %.2g ms from %d%% (vtfl2=%d)\n",
+                exp_kp1,
+                (int)round((63-vtfl2) * 100.0 / 63.0),
+                vtfl2
+            );
         }
 
         if (vtfl3_en)
         {
-            printf("Knee point 2: %g ms from %d%% (vtfl3=%d)\n", exp_kp2, (63-vtfl3)*100/63, vtfl3);
+            printf("Knee point 2: %.2g ms from %d%% (vtfl3=%d)\n",
+                exp_kp2,
+                (int)round((63-vtfl3) * 100.0 / 63.0),
+                vtfl3
+            );
         }
     }
 }
