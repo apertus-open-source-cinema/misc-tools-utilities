@@ -1349,33 +1349,79 @@ static double std(double* X, int N)
     return sqrt(stdev / N);
 }
 
+static void display_rc_noise(
+    float noise,
+    float noise_odd,
+    float noise_evn,
+    float pix_noise,
+    const char * noise_type,
+    const char * group_type
+)
+{
+    printf("%s noise   : %.2f (%.1f%%)\n", noise_type, noise, noise / pix_noise * 100);
+
+    /* if row noise on odd columns, or on even columns,
+     * is significantly different than overall value,
+     * show detailed figures; same for column noise
+     */
+    const float disp_thr = 0.05;
+    if (ABS(noise_odd/noise - 1) > disp_thr || ABS(noise_evn/noise - 1) > disp_thr)
+    {
+        printf("- odd %ss  : %.2f (%.1f%%)\n"
+               "- even %ss : %.2f (%.1f%%)\n",
+            group_type, noise_odd, noise_odd / pix_noise * 100,
+            group_type, noise_evn, noise_evn / pix_noise * 100
+        );
+    }
+
+    /* Row/column noise on odd or even columns/rows much higher than average
+     * => invalid dark frame correction caused by the line swapping bug?
+     */
+    if (noise_odd > 3 * noise || noise_evn > 3 * noise)
+    {
+        printf("*** Warning: %ss appear to be swapped (bad dark correction?)\n", group_type);
+    }
+}
+
 static void check_darkframe_iq(struct raw_info * raw_info, int16_t * raw16)
 {
     int w = raw_info->width;
     int h = raw_info->height;
 
-    double* row_avg = malloc(h * sizeof(row_avg[0]));
-    double* col_avg = malloc(w * sizeof(col_avg[0]));
+    double* row_avg     = malloc(h * sizeof(row_avg[0]));
+    double* row_avg_odd = malloc(h * sizeof(row_avg_odd[0]));
+    double* row_avg_evn = malloc(h * sizeof(row_avg_evn[0]));
+    double* col_avg     = malloc(w * sizeof(col_avg[0]));
+    double* col_avg_odd = malloc(w * sizeof(col_avg_odd[0]));
+    double* col_avg_evn = malloc(w * sizeof(col_avg_evn[0]));
     double* center_crop = malloc(500 * 500 * sizeof(center_crop[0]));
 
     for (int y = 50; y < h-50; y++)
     {
-        int acc = 0;
-        for (int x = 50; x < w-50; x++)
+        int acc_odd = 0;
+        int acc_evn = 0;
+        for (int x = 50; x < w-50; x += 2)
         {
-            acc += raw16[x + y*w];
+            acc_odd += raw16[x+1 + y*w];
+            acc_evn += raw16[x   + y*w];
         }
-        row_avg[y] = (double) acc / (w - 100);
+        row_avg_odd[y] = (double) acc_odd * 2 / (w - 100);
+        row_avg_evn[y] = (double) acc_evn * 2 / (w - 100);
+        row_avg[y]     = (row_avg_odd[y] + row_avg_evn[y]) / 2;
     }
 
     for (int x = 50; x < w-50; x++)
     {
-        int acc = 0;
-        for (int y = 50; y < h-50; y++)
+        int acc_odd = 0;
+        int acc_evn = 0;
+        for (int y = 50; y < h-50; y += 2)
         {
-            acc += raw16[x + y*w];
+            acc_odd += raw16[x + (y+1)*w];
+            acc_evn += raw16[x +  y   *w];
         }
-        col_avg[x] = (double) acc / (h - 100);
+        col_avg_odd[x] = (double) acc_odd * 2 / (h - 100);
+        col_avg_evn[x] = (double) acc_evn * 2 / (h - 100);
+        col_avg[x]     = (col_avg_odd[x] + col_avg_evn[x]) / 2;
     }
 
     int n = 0;
@@ -1388,18 +1434,27 @@ static void check_darkframe_iq(struct raw_info * raw_info, int16_t * raw16)
     }
     
     /* scale values to 12-bit DN */
-    double avg = mean(row_avg+50, h-100) / 8;
-    double pix_noise = std(center_crop, n) / 8;
-    double row_noise = std(row_avg+50, h-100) / 8;
-    double col_noise = std(col_avg+50, w-100) / 8;
+    double avg           = mean(row_avg+50, h-100) / 8;
+    double pix_noise     = std(center_crop, n) / 8;
+    double row_noise     = std(row_avg+50, h-100) / 8;
+    double row_noise_odd = std(row_avg_odd+50, h-100) / 8;
+    double row_noise_evn = std(row_avg_evn+50, h-100) / 8;
+    double col_noise     = std(col_avg+50, w-100) / 8;
+    double col_noise_odd = std(col_avg_odd+50, w-100) / 8;
+    double col_noise_evn = std(col_avg_evn+50, w-100) / 8;
     
     printf("Average     : %.2f\n", avg);
     printf("Pixel noise : %.2f\n", pix_noise);
-    printf("Row noise   : %.2f (%.1f%%)\n", row_noise, row_noise / pix_noise * 100);
-    printf("Col noise   : %.2f (%.1f%%)\n", col_noise, col_noise / pix_noise * 100);
+    display_rc_noise(row_noise, row_noise_odd, row_noise_evn, pix_noise, "Row", "col");
+    display_rc_noise(col_noise, col_noise_odd, col_noise_evn, pix_noise, "Col", "row");
+
     free(center_crop);
     free(row_avg);
+    free(row_avg_odd);
+    free(row_avg_evn);
     free(col_avg);
+    free(col_avg_odd);
+    free(col_avg_evn);
 }
 
 /* pack raw data from 16-bit to 12-bit */
