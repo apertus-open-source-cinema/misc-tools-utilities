@@ -1,21 +1,23 @@
 /*
  * Copyright (C) 2013 Magic Lantern Team
- * 
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
  * of the License, or (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the
  * Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor,
  * Boston, MA  02110-1301, USA.
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
 #include "stdint.h"
@@ -52,7 +54,7 @@ static int16_t Lut_B[4096*8];
 #define DCNUFRAME_SCALING 8192
 
 /**
- * How much the dark frame average, after subtracting black reference columns, 
+ * How much the dark frame average, after subtracting black reference columns,
  * increases with exposure time and gain (DN / ms / gain);
  */
 float dark_current_avg = 0.06;
@@ -145,7 +147,7 @@ struct cmd_group options[] = {
             { &calc_gainframe,1,"--calc-gainframe","Average a gain frame (aka flat field frame)" },
             { &calc_clipframe,1,"--calc-clipframe","Average a clip (overexposed) frame" },
             { &check_darkframe,1,"--check-darkframe","Check image quality indicators on a dark frame" },
-            
+
             OPTION_EOL,
         },
     },
@@ -226,10 +228,10 @@ static void raw12_data_offset(void* buf, int frame_size, int offset)
     {
         unsigned a = (buf2[i].a_hi << 4) | buf2[i].a_lo;
         unsigned b = (buf2[i].b_hi << 8) | buf2[i].b_lo;
-        
+
         a = MIN(a + offset, 4095);
         b = MIN(b + offset, 4095);
-        
+
         buf2[i].a_lo = a; buf2[i].a_hi = a >> 4;
         buf2[i].b_lo = b; buf2[i].b_hi = b >> 8;
     }
@@ -293,15 +295,15 @@ static double check_fixed_freq(int* row_noise, int n, double f, double* out_ks, 
         ks += sin(2*M_PI*f*i) * row_noise[i];
         kc += cos(2*M_PI*f*i) * row_noise[i];
     }
-    
+
     /* fixme: why n/2?
      * it works that way, but I need to check the Fourier series theory again */
     ks /= (n/2);
     kc /= (n/2);
-    
+
     if (out_ks) *out_ks = ks;
     if (out_kc) *out_kc = kc;
-    
+
     return sqrt(ks*ks + kc*kc);
 }
 
@@ -324,7 +326,7 @@ static double scan_fixed_freq(int* row_noise, int n, double lo, double hi, doubl
     //~ printf("Scanning 1/%g...1/%g\n", 1/lo, 1/hi);
     double best_k = 0;
     double best_f = 0;
-    
+
     /* use 200 log increments */
     double step = pow(hi/lo, 1/199.0);
     for (double f = lo; f < hi; f *= step)
@@ -337,12 +339,12 @@ static double scan_fixed_freq(int* row_noise, int n, double lo, double hi, doubl
             best_f = f;
         }
     }
-    
+
     if (hi - lo > 1e-4)
     {
         return scan_fixed_freq(row_noise, n, best_f / step, best_f * step, out_mag);
     }
-    
+
     if (out_mag) *out_mag = best_k;
     return best_f;
 }
@@ -354,7 +356,7 @@ static void remove_fixed_frequencies(int* row_noise, int n)
     do
     {
         double f = scan_fixed_freq(row_noise, n, 1/250.0, 1/2.0, &mag);
-        
+
         /* scale "mag" to 12-bit DN units */
         mag = mag/16/8;
 
@@ -380,7 +382,7 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
 
     printf("Even rows   : %d...%d\n", offsets[0]/8, offsets[2]/8);
     printf("Odd rows    : %d...%d\n", offsets[1]/8, offsets[3]/8);
-    
+
     for (int y = 0; y < h; y++)
     {
         for (int x = 0; x < w; x++)
@@ -396,24 +398,24 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
     {
         return;
     }
-    
+
     printf("Row noise from black columns...\n");
-    
+
     /**
      * Before rushing to correct row noise using black column variations,
      * let's take a look at the frequency components of the two signals.
-     * 
+     *
      * We will notice that our black columns may contain a strong periodical
      * component, repeating every 10...50 pixels.
-     * 
+     *
      * The value differs between images, but appears to be identical on images
      * from the same set. It doesn't change with exposure time. Cause is unknown.
-     * 
+     *
      * This perturbation has to be removed before trying to correct row noise,
      * otherwise fixing the row noise will have the side effect of introducing
      * a strong sine component into the main image.
      */
-    
+
     /* black column row averages x16 */
     int* black_col = malloc(h * sizeof(black_col[0]));
 
@@ -431,29 +433,29 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
         }
         black_col[y] = acc;
     }
-    
+
     if (!no_blackcol_ff)
     {
         remove_fixed_frequencies(black_col, h);
     }
-    
+
     /**
      * Do not subtract the full black column variations. Here's why:
-     * 
+     *
      * Kalman filter theory: http://robocup.mi.fu-berlin.de/buch/kalman.pdf
-     * 
+     *
      * From page 3, if we know how noisy our estimations are,
      * the optimal weights are inversely proportional with the noise variances:
-     * 
+     *
      * x_optimal = (x1 * var(x2) + x2 * var(x1)) / (var(x1) + var(x2))
-     * 
+     *
      * Here, let's say R = x1 is row noise (stdev = 1.45 at gain=x1) and x2 is
      * black column noise: B = mean(black_col') = R + x2 => x2 = B - R,
      * x2 can be estimated as mean(black_col') - mean(active_area'),
      * stdev(x2) = 0.75.
-     * 
+     *
      * We want to find k that minimizes var(R - k*B).
-     * 
+     *
      * var(R - k*B) = var(x1 * (1-k) - x2 * k),
      * so k = var(x1)) / (var(x1) + var(x2).
      */
@@ -467,18 +469,18 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
     /**
      * The difference between the two green channels is another great
      * source of information about the row noise.
-     * 
+     *
      * We'll compute it at lags -2, -1, 1, 2.
      */
 
     int* green_delta[4];
     int lags[4] = {-2, -1 , 1, 2};
     int* samples = malloc(w/2 * sizeof(samples[0]));
-    
+
     for (int k = 0; k < 4; k++)
     {
         green_delta[k] = malloc(h * sizeof(green_delta[0][0]));
-        
+
         for (int y = 2; y < h-2; y++)
         {
             for (int x = 8 + y%2; x < w-8; x += 2)
@@ -502,7 +504,7 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
             fprintf(f, "%d ", black_col[y]);
         }
         fprintf(f, "]' / 8 / 16;\n");
-        
+
         fprintf(f, "green_delta = [\n");
         for (int k = 0; k < 4; k++)
         {
@@ -526,7 +528,7 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
             fprintf(f, "%d ", acc);
         }
         fprintf(f, "]' / 8 / %d - 128;\n", w - 100);
-        
+
         fclose(f);
     }
 
@@ -573,13 +575,13 @@ static void subtract_black_columns(struct raw_info * raw_info, int16_t * raw16)
                          green_delta[3][y] * 0.32
                 ) : 0
         ) / 16;
-        
+
         for (int x = 0; x < w; x++)
         {
             raw16[x + y*w] -= offset;
         }
     }
-    
+
     free(samples);
     free(black_col);
 
@@ -603,7 +605,7 @@ static void reverse_bytes_order(uint8_t* buf, int count)
 
 static int file_exists(char * filename)
 {
-    struct stat buffer;   
+    struct stat buffer;
     return (stat (filename, &buffer) == 0);
 }
 
@@ -636,7 +638,7 @@ static void read_reference_frame(char* filename, int16_t * buf, struct raw_info 
           } else error = 1;
         }
       }
-    
+
     CHECK(!(error || nd < 3), "not a valid PGM file\n");
 
     int width = dim[0];
@@ -660,7 +662,7 @@ static void read_reference_frame(char* filename, int16_t * buf, struct raw_info 
         }
     }
 
-    
+
     if (width != raw_info->width || height != raw_info->height)
     {
         printf("%s: size mismatch, expected %dx%d, got %dx%d.\n",
@@ -684,19 +686,19 @@ static void subtract_dark_frame(struct raw_info * raw_info, int16_t * raw16, int
     int w = raw_info->width;
     int h = raw_info->height;
     int dark_current = extra_offset;
-    
+
     for (int y = 0; y < h; y++)
     {
         for (int x = 0; x < w; x++)
         {
             int i = x + y*w;
-            
+
             if (darkcurrent_frame)
             {
                 float dc = (float) (darkcurrent_frame[i] - DCNUFRAME_OFFSET) * 8 / DCNUFRAME_SCALING;
                 dark_current = (int)roundf(dc * meta_expo);
             }
-            
+
             if (x >= 8 && x < w - 8)
             {
                 /* for the active area, subtract the dark frame (constant offset)
@@ -718,11 +720,11 @@ static float measure_hot_pixels(struct raw_info * raw_info, int16_t * raw16, int
 {
     int hotpixels[512];
     int num_hotpix = 0;
-    
+
     /* identify hot pixels from dark current frame */
     /* average value is 0.06 DN/ms; only select pixels with much higher dark currents */
     int thr = 0.5 * DCNUFRAME_SCALING + DCNUFRAME_OFFSET;
-    
+
     int w = raw_info->width;
     int h = raw_info->height;
     for (int y = 50; y < h-50; y++)
@@ -735,9 +737,9 @@ static float measure_hot_pixels(struct raw_info * raw_info, int16_t * raw16, int
             }
         }
     }
-    
+
     //~ printf("%d hot pixels, ", num_hotpix);
-    
+
     int mags[512];
     for (int i = 0; i < num_hotpix; i++)
     {
@@ -757,7 +759,7 @@ static float measure_hot_pixels(struct raw_info * raw_info, int16_t * raw16, int
                 }
             }
         }
-        
+
         /* scaling factor between measured and reference intensity of the hot pixel */
         /* where "intensity" of a hot pixel is its value minus the average of its 8 neighbours
          * from the same color channel */
@@ -767,7 +769,7 @@ static float measure_hot_pixels(struct raw_info * raw_info, int16_t * raw16, int
     }
 
     float intensity = median_int_wirth(mags, num_hotpix) / 8192.0;
-    
+
     return intensity;
 }
 
@@ -796,7 +798,7 @@ static void apply_clip_frame(struct raw_info * raw_info, int16_t * raw16, uint16
         }
     }
     clip_avg /= (w - 16) * h;
-    
+
     /* fixme: magic numbers hardcoded for gain x1 */
     int n = raw_info->width * raw_info->height;
     for (int i = 0; i < n; i++)
@@ -830,16 +832,16 @@ static void interp1(int16_t* lut, int N)
 static void read_lut(char * filename)
 {
     /* Header looks like this:
-     * 
+     *
      * Version 1
      * From 0.0 1.0
      * Length 256
      * Components 3
      */
-    
+
     FILE* f = fopen(filename, "r");
     CHECK(f, "lut file");
-    
+
     int version=0, length=0, components=0;
     float from_lo=0, from_hi=0;
     CHECK(fscanf(f, "Version %d\n", &version)           == 1,   "ver"    );
@@ -850,7 +852,7 @@ static void read_lut(char * filename)
     CHECK(version                                       == 1,   "ver1"   );
     CHECK(from_lo                                       == 0.0, "from_lo");
     CHECK(from_hi                                       == 1.0, "from_hi");
-    
+
     printf("%dx%d\n", components, length);
     for (int i = 0; i < length; i++)
     {
@@ -872,21 +874,21 @@ static void read_lut(char * filename)
                 printf("components error\n");
                 exit(1);
         }
-        
+
         CHECK(r  >= 0 && r  <= 1, "R range");
         CHECK(g1 >= 0 && g1 <= 1, "G1 range");
         CHECK(g2 >= 0 && g2 <= 1, "G2 range");
         CHECK(b  >= 0 && b  <= 1, "B range");
-        
+
         int this = i * (4096*8-1) / (length-1);
-        
+
         Lut_R [this] = (int) round(r  * 4096 * 8);
         Lut_G1[this] = (int) round(g1 * 4096 * 8);
         Lut_G2[this] = (int) round(g2 * 4096 * 8);
         Lut_B [this] = (int) round(b  * 4096 * 8);
-        
+
         int prev = (i-1) * (4096*8-1) / (length-1);;
-        
+
         if (prev >= 0)
         {
             interp1(Lut_R  + prev, this - prev);
@@ -897,7 +899,7 @@ static void read_lut(char * filename)
     }
     CHECK(fscanf(f, "}\n")                              == 0,   "}"      );
     fclose(f);
-    
+
     if (0)
     {
         f = fopen("lut.m", "w");
@@ -960,7 +962,7 @@ static void linear_fit(float* x, float* y, int n, float* a, float* b)
      * a = (mean(xy) - mean(x)mean(y)) / (mean(x^2) - mean(x)^2)
      * b = mean(y) - a mean(x)
      */
-    
+
     double mx = 0, my = 0, mxy = 0, mx2 = 0;
     for (int i = 0; i < n; i++)
     {
@@ -993,7 +995,7 @@ static void calc_avgframe_addframe(struct raw_info * raw_info, int16_t * raw16, 
 {
     int n = raw_info->width * raw_info->height;
     int new_frame_size = n * sizeof(A.sum32[0]);
-    
+
     if (!A.sum32)
     {
         /* allocate memory on first call */
@@ -1005,7 +1007,7 @@ static void calc_avgframe_addframe(struct raw_info * raw_info, int16_t * raw16, 
         CHECK(A.sum32, "malloc");
         CHECK(A.max16, "malloc");
         CHECK(A.min16, "malloc");
-        
+
         for (int i = 0; i < n; i++)
         {
             A.sum32[i] = 0;
@@ -1013,7 +1015,7 @@ static void calc_avgframe_addframe(struct raw_info * raw_info, int16_t * raw16, 
             A.max16[i] = INT16_MIN;
         }
     }
-    
+
     /* sanity checking */
     CHECK(A.size == new_frame_size, "all frames must have the same resolution.")
     CHECK(A.gain == meta_gain, "all frames must have the same gain setting.")
@@ -1049,10 +1051,10 @@ static void calc_avgframe_addframe(struct raw_info * raw_info, int16_t * raw16, 
         }
     }
     avg /= h * (w-16);
-    
+
     /* display values scaled back to 12-bit */
     printf("Average     : %.4f + %d\n", avg/8, avg_offset/8);
-    
+
     /* record exposure and mean of each image */
     A.exposures[A.count] = meta_expo;
     A.averages [A.count] = avg/8;
@@ -1093,7 +1095,7 @@ static void save_pgm(char* filename, struct raw_info * raw_info, int32_t * raw32
 static void calc_avgframe_finish(char* out_filename, struct raw_info * raw_info, int type)
 {
     CHECK(A.sum32, "invalid call to calc_avgframe_finish")
-    
+
     int n = raw_info->width * raw_info->height;
 
     int offset = (type == CALC_DARK_FRAME) ? DARKFRAME_OFFSET :
@@ -1141,7 +1143,7 @@ static void calc_avgframe_finish(char* out_filename, struct raw_info * raw_info,
     {
         float dark_current, dark_offset;
         linear_fit(A.exposures, A.averages, A.count, &dark_current, &dark_offset);
-        
+
         if (!isfinite(dark_current))
         {
             printf("Could not compute dark current.\n");
@@ -1160,7 +1162,7 @@ static void calc_avgframe_finish(char* out_filename, struct raw_info * raw_info,
             dark_offset += A.exposures[i] * dark_current;
         }
         dark_offset /= A.count;
-        
+
         int dark_off = (int)round(dark_offset);
         printf("Dark offset : %.2f\n", dark_off/8.0);
         for (int i = 0; i < n; i++)
@@ -1168,9 +1170,9 @@ static void calc_avgframe_finish(char* out_filename, struct raw_info * raw_info,
             A.sum32[i] -= dark_off;
         }
     }
-    
+
     save_pgm(out_filename, raw_info, A.sum32);
-    
+
     free(A.sum32);
     free(A.max16);
     free(A.min16);
@@ -1186,7 +1188,7 @@ static void calc_gainframe_do(struct raw_info * raw_info, int16_t * buf)
     int frame_size = n * sizeof(buf[0]);
     int16_t * fixed = malloc(frame_size);
     CHECK(fixed, "malloc");
-    
+
     memcpy(fixed, buf, frame_size);
     fix_pattern_noise(raw_info, fixed, 0, 0);
 
@@ -1199,7 +1201,7 @@ static void calc_gainframe_do(struct raw_info * raw_info, int16_t * buf)
                ? 16384                          /* do not touch black reference columns */
                : fixed[i] * 16384.0 / buf[i];   /* assume pattern noise in midtones is gain (PRNU) */
     }
-    
+
     free(fixed);
 }
 
@@ -1221,7 +1223,7 @@ static void calc_linfitframes_addframe(struct raw_info * raw_info, int16_t * raw
 {
     int n = raw_info->width * raw_info->height;
     int new_frame_size = n * sizeof(L.my[0]);
-    
+
     if (!L.my)
     {
         /* allocate memory on first call */
@@ -1231,17 +1233,17 @@ static void calc_linfitframes_addframe(struct raw_info * raw_info, int16_t * raw
         L.mxy = malloc(L.size);
         CHECK(L.my,  "malloc");
         CHECK(L.mxy, "malloc");
-        
+
         for (int i = 0; i < n; i++)
         {
             L.my[i]  = 0;
             L.mxy[i] = 0;
         }
-        
+
         L.expo_min = 1e10;
         L.expo_max = 0;
     }
-    
+
     /* sanity checking */
     CHECK(L.size == new_frame_size, "all frames must have the same resolution.")
     CHECK(L.gain == meta_gain, "all frames must have the same gain setting.")
@@ -1264,7 +1266,7 @@ static void calc_linfitframes_addframe(struct raw_info * raw_info, int16_t * raw
         L.mxy[i] += meta_expo * p;
     }
     L.count++;
-    
+
     /* keep track of min/max exposure, for printing at the end */
     L.expo_max = MAX(L.expo_max, meta_expo);
     L.expo_min = MIN(L.expo_min, meta_expo);
@@ -1273,7 +1275,7 @@ static void calc_linfitframes_addframe(struct raw_info * raw_info, int16_t * raw
 static void calc_linfitframes_finish(char* offset_filename, char* gain_filename, struct raw_info * raw_info)
 {
     CHECK(L.my, "invalid call to calc_linfitframes_finish")
-    
+
     int n = raw_info->width * raw_info->height;
 
     printf("\n");
@@ -1289,7 +1291,7 @@ static void calc_linfitframes_finish(char* offset_filename, char* gain_filename,
     {
         printf("Please consider using more frames (at least 64).\n");
     }
-    
+
     /* finish the linear fitting */
     L.mx /= L.count;
     L.mx2 /= L.count;
@@ -1298,7 +1300,7 @@ static void calc_linfitframes_finish(char* offset_filename, char* gain_filename,
         L.my[i]  /= L.count;
         L.mxy[i] /= L.count;
     }
-    
+
     int32_t * a = malloc(n * sizeof(a[0]));
     int32_t * b = malloc(n * sizeof(a[0]));
 
@@ -1313,7 +1315,7 @@ static void calc_linfitframes_finish(char* offset_filename, char* gain_filename,
 
     save_pgm(offset_filename, raw_info, b);
     save_pgm(gain_filename,   raw_info, a);
-    
+
     free(L.my);
     free(L.mxy);
     free(a);
@@ -1330,7 +1332,7 @@ static double mean(double* X, int N)
     {
         sum += X[i];
     }
-    
+
     return sum / N;
 }
 
@@ -1345,7 +1347,7 @@ static double std(double* X, int N)
         double dif = X[i] - m;
         stdev += dif * dif;
     }
-    
+
     return sqrt(stdev / N);
 }
 
@@ -1432,7 +1434,7 @@ static void check_darkframe_iq(struct raw_info * raw_info, int16_t * raw16)
             center_crop[n++] = raw16[x + y*w];
         }
     }
-    
+
     /* scale values to 12-bit DN */
     double avg           = mean(row_avg+50, h-100) / 8;
     double pix_noise     = std(center_crop, n) / 8;
@@ -1442,7 +1444,7 @@ static void check_darkframe_iq(struct raw_info * raw_info, int16_t * raw16)
     double col_noise     = std(col_avg+50, w-100) / 8;
     double col_noise_odd = std(col_avg_odd+50, w-100) / 8;
     double col_noise_evn = std(col_avg_evn+50, w-100) / 8;
-    
+
     printf("Average     : %.2f\n", avg);
     printf("Pixel noise : %.2f\n", pix_noise);
     display_rc_noise(row_noise, row_noise_odd, row_noise_evn, pix_noise, "Row", "col");
@@ -1483,7 +1485,7 @@ void reverse_lines_order(char* buf, int count, int width)
     int pitch = width * 12 / 8;
     void* aux = malloc(pitch);
     CHECK(aux, "malloc");
-    
+
     /* swap odd and even lines */
     int i;
     int height = count / pitch;
@@ -1493,7 +1495,7 @@ void reverse_lines_order(char* buf, int count, int width)
         memcpy(buf + i * pitch, buf + (i+1) * pitch, pitch);
         memcpy(buf + (i+1) * pitch, aux, pitch);
     }
-    
+
     free(aux);
 }
 
@@ -1521,9 +1523,9 @@ static void hdmi_reorder(struct raw_info * raw_info)
      * G: (2,0) -> (0,1)
      * B: (3,0) -> (1,1)
      * ...
-     * 
+     *
      */
-    
+
     /* handle one Bayer block at a time */
     for (int y = 0; y < raw_info->height-2; y += 2)
     {
@@ -1531,11 +1533,11 @@ static void hdmi_reorder(struct raw_info * raw_info)
         {
             /* pixel position in source image */
             int i = (x/2 + y/2 * raw_info->width/2) * 4;
-            
+
             /* src1 is RG, src2 is GB from source image (both on the same line) */
             struct raw12_twopix * src1 = (struct raw12_twopix *)(aux + i * sizeof(struct raw12_twopix) / 2);
             struct raw12_twopix * src2 = src1 + 1;
-            
+
             /* dst1 is RG, dst2 is GB from destination image (GB under RG) */
             /* note: we offset y by 1 because the rest of the code assumes [GB;RG] order */
             struct raw12_twopix * dst1 = (struct raw12_twopix *)(raw_info->buffer + (y+1) * raw_info->pitch + x * sizeof(struct raw12_twopix) / 2);
@@ -1545,7 +1547,7 @@ static void hdmi_reorder(struct raw_info * raw_info)
             *dst2 = *src2;
         }
     }
-    
+
     free(aux);
 }
 
@@ -1594,7 +1596,7 @@ static int read_pgm_stream(FILE* fp, struct raw_info * raw_info, int16_t ** praw
 
     int width = dim[0];
     int height = dim[1];
-    
+
     raw_info->width = width;
     raw_info->height = height;
     int size = raw_info->width * raw_info->height * 2;
@@ -1603,19 +1605,19 @@ static int read_pgm_stream(FILE* fp, struct raw_info * raw_info, int16_t ** praw
     CHECK(praw16 && !*praw16, "raw16");
     *praw16 = malloc(size);
     int16_t * raw16 = *praw16;
-    
+
     int r = fread(raw16, 1, size, fp);
     CHECK(r == size, "fread");
-    
+
     /* PGM is big endian, need to reverse it */
     reverse_bytes_order((void*)raw16, size);
-    
+
     /* scale data by 8 */
     for (int i = 0; i < width * height; i++)
     {
         raw16[i] *= 8;
     }
-    
+
     return 1;
 }
 
@@ -1626,7 +1628,7 @@ static void read_pgm(char* filename, struct raw_info * raw_info, int16_t ** praw
     CHECK(fp, "could not open %s", filename);
 
     read_pgm_stream(fp, raw_info, praw16);
-    
+
     fclose(fp);
 }
 #endif
@@ -1643,7 +1645,7 @@ static void moving_average_addframe(struct raw_info * raw_info, int16_t * raw16)
 {
     int n = raw_info->width * raw_info->height;
     int frame_size = n * sizeof(M.avg[0]);
-    
+
     if (!M.avg)
     {
         /* allocate memory on first call */
@@ -1655,7 +1657,7 @@ static void moving_average_addframe(struct raw_info * raw_info, int16_t * raw16)
             M.avg[i] = raw16[i] * 1024;
         }
     }
-        
+
     /* add current frame to accumulator */
     for (int i = 0; i < n; i++)
     {
@@ -1678,17 +1680,17 @@ static void moving_average_addframe(struct raw_info * raw_info, int16_t * raw16)
 static void fix_pattern_noise_temporally(struct raw_info * raw_info, int16_t * raw16, int fixpn_flags)
 {
     moving_average_addframe(raw_info, raw16);
-    
+
     int n = raw_info->width * raw_info->height;
     int16_t* avg = malloc(n * sizeof(avg[0]));
-    
+
     for (int i = 0; i < n; i++)
     {
         avg[i] = (M.avg[i] + 512) / 1024;
     }
-    
+
     fix_pattern_noise_ex(raw_info, raw16, avg, fixpn & 1, fixpn_flags);
-    
+
     free(avg);
 }
 
@@ -1737,7 +1739,7 @@ int main(int argc, char** argv)
         printf("        raw2dng --calc-clipframe *-gainx1-*.raw12 \n");
         printf(" - Always compute these frames in the order listed here\n");
         printf("   (dark/dcnu frames, then gain frames (optional), then clip frames (optional).\n");
-        
+
         printf("\n");
         show_commandline_help(argv[0]);
         return 0;
@@ -1762,13 +1764,13 @@ int main(int argc, char** argv)
     {
         if (argv[k][0] == '-')
             continue;
-        
+
         FILE* fi;
         char out_filename[256];
         int16_t * raw16 = 0;
 
         printf("\n%s\n", argv[k]);
-        
+
         if (endswith(argv[k], ".raw12"))
         {
             fi = fopen(argv[k], "rb");
@@ -1784,7 +1786,7 @@ int main(int argc, char** argv)
 
             /* replace input file extension with .DNG */
             change_ext(argv[k], out_filename, ".DNG", sizeof(out_filename));
-            
+
             pgm_input = 1;
         }
         else if (endswith(argv[k], ".dng") || endswith(argv[k], ".DNG"))
@@ -1795,7 +1797,7 @@ int main(int argc, char** argv)
             {
                 static int frame_count = 1;
                 snprintf(out_filename, sizeof(out_filename), argv[k], frame_count++);
-                
+
                 /* process the same argument at next iteration */
                 k--;
             }
@@ -1810,7 +1812,7 @@ int main(int argc, char** argv)
             printf("Unknown file type.\n");
             continue;
         }
-        
+
         if (pgm_input)
         {
             printf("PGM input...\n");
@@ -1821,7 +1823,7 @@ int main(int argc, char** argv)
             image_width = raw_info.width;
             image_height = raw_info.height;
         }
-        
+
         int width = image_width ? image_width : hdmi_ramdump ? 1920*2 : 4096;
         int height = image_height;
         int has_metadata = 0;
@@ -1834,29 +1836,29 @@ int main(int argc, char** argv)
             fseek(fi, 0, SEEK_SET);
         }
         raw_set_geometry(width, height, 0, 0, 0, 0);
-        
+
         /* print current settings */
         printf("Resolution  : %d x %d\n", raw_info.width, raw_info.height);
         printf("Frame size  : %d bytes\n", raw_info.frame_size);
         switch(raw_info.cfa_pattern) {
             case 0x02010100:
-                printf("Bayer Order : RGGB \n");    
+                printf("Bayer Order : RGGB \n");
                 break;
             case 0x01000201:
-                printf("Bayer Order : GBRG \n");    
+                printf("Bayer Order : GBRG \n");
                 break;
             case 0x01020001:
-                printf("Bayer Order : GRBG \n");    
+                printf("Bayer Order : GRBG \n");
                 break;
             case 0x00010102:
-                printf("Bayer Order : BGGR \n");    
+                printf("Bayer Order : BGGR \n");
                 break;
         }
 
         /* raw12 data */
         raw_info.buffer = malloc(raw_info.frame_size);
         CHECK(raw_info.buffer, "malloc");
-        
+
         /* if we already loaded raw16, skip reading raw12 */
         if (!raw16)
         {
@@ -1870,7 +1872,7 @@ int main(int argc, char** argv)
         float meta_expo = 0;
         int meta_ystart = 0;
         int meta_ysize = 0;
-        
+
         if (raw16)
         {
             /* hack to use dark frames on HDMI data */
@@ -1883,12 +1885,12 @@ int main(int argc, char** argv)
             int r = fread(registers, 1, 256, fi);
             CHECK(r == 256, "fread");
             metadata_extract(registers);
-            
+
             meta_gain = metadata_get_gain(registers);
             meta_expo = metadata_get_exposure(registers);
             meta_ystart = metadata_get_ystart(registers);
             meta_ysize = metadata_get_ysize(registers);
-            
+
             if (dump_regs)
             {
                 /* dump registers and skip the output file */
@@ -1911,10 +1913,10 @@ int main(int argc, char** argv)
         /* use black and white levels from command-line */
         raw_info.black_level = black_level;
         raw_info.white_level = white_level;
-        
+
         printf("Black level : %d\n", raw_info.black_level);
         printf("White level : %d\n", raw_info.white_level);
-        
+
         if (raw_info.black_level < 0)
         {
             /* We can't use a negative black level,
@@ -1939,7 +1941,7 @@ int main(int argc, char** argv)
             printf("Line swap...\n");
             reverse_lines_order(raw_info.buffer, raw_info.frame_size, raw_info.width);
         }
-        
+
         if (no_processing)
         {
             /* skip all processing (except reordering) */
@@ -1959,15 +1961,15 @@ int main(int argc, char** argv)
 
         int use_dcnuframe = !calc_dcnuframe && !calc_darkframe && use_darkframe &&
                             !no_dcnuframe && meta_gain && file_exists_warn(dcnu_filename);
-        
+
         int use_gainframe = !calc_gainframe && !calc_dcnuframe && !calc_darkframe && use_darkframe &&
                             !no_gainframe && meta_gain && file_exists_warn(gain_filename);
-        
+
         int use_clipframe = !calc_clipframe && !calc_gainframe && !calc_dcnuframe && !calc_darkframe && use_darkframe &&
                             !no_clipframe && meta_gain && file_exists_warn(clip_filename);
-        
+
         use_lut = use_lut && file_exists_warn(lut_filename);
-        
+
         if (!use_darkframe && !calc_darkframe && !calc_dcnuframe)
         {
             no_blackcol = 1;
@@ -1986,7 +1988,7 @@ int main(int argc, char** argv)
             raw16 = malloc(raw_info.width * raw_info.height * sizeof(raw16[0]));
             unpack12(&raw_info, raw16);
         }
-        
+
         if (use_darkframe)
         {
             printf("Dark frame  : %s\n", dark_filename);
@@ -1996,14 +1998,14 @@ int main(int argc, char** argv)
             int extra_offset = 0;
 
             read_reference_frame(dark_filename, dark, &raw_info, meta_ystart, meta_ysize);
-            
+
             if (use_dcnuframe)
             {
                 printf("Dark current: %s ", dcnu_filename);
                 darkcurrent = malloc(raw_info.width * raw_info.height * sizeof(darkcurrent[0]));
                 read_reference_frame(dcnu_filename, darkcurrent, &raw_info, meta_ystart, meta_ysize);
 
-                darkcurrent_scaling = 
+                darkcurrent_scaling =
                     (dc_hot_pixels) ? measure_hot_pixels(&raw_info, raw16, darkcurrent)
                                     : meta_expo ;
 
@@ -2044,7 +2046,7 @@ int main(int argc, char** argv)
             apply_clip_frame(&raw_info, raw16, clip);
             free(clip);
         }
-        
+
         if (fixpn)
         {
             int fixpn_flags = fixpn_flags1 | fixpn_flags2;
@@ -2073,19 +2075,19 @@ int main(int argc, char** argv)
                 printf("Error: calibration frames must be full-resolution.\n");
                 exit(1);
             }
-            
+
             if ((calc_gainframe || calc_clipframe) && !use_darkframe)
             {
                 printf("Error: gain and clip frames require a dark frame.\n");
                 exit(1);
             }
-            
+
             if (calc_gainframe)
             {
                 /* estimate gain from each frame, then average those estimations */
                 calc_gainframe_do(&raw_info, raw16);
             }
-            
+
             if (calc_dcnuframe)
             {
                 /* linear fit for multiple frames */
@@ -2096,12 +2098,12 @@ int main(int argc, char** argv)
                 /* generic averaging routine */
                 calc_avgframe_addframe(&raw_info, raw16, meta_gain, meta_expo);
             }
-            
+
             /* no need to repack to 12 bits */
             free(raw16); raw16 = 0;
             goto cleanup;
         }
-        
+
         if (check_darkframe)
         {
             check_darkframe_iq(&raw_info, raw16);
@@ -2156,11 +2158,11 @@ cleanup:
         if (fi != stdin) fclose(fi);
         free(raw_info.buffer); raw_info.buffer = 0;
     }
-    
+
     if (calc_darkframe)
     {
         calc_avgframe_finish(dark_filename, &raw_info, CALC_DARK_FRAME);
-        
+
         if (file_exists(dcnu_filename))
         {
             printf("Removing %s...\n", dcnu_filename);
@@ -2181,7 +2183,7 @@ cleanup:
     }
 
     printf("Done.\n\n");
-    
+
     return 0;
 }
 

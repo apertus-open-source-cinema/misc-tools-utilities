@@ -1,9 +1,26 @@
+## Copyright (C) 2015 a1ex
+##
+## This program is free software: you can redistribute it and/or modify
+## it under the terms of the GNU General Public License as published by
+## the Free Software Foundation, either version 3 of the License, or
+## (at your option) any later version.
+##
+## This program is distributed in the hope that it will be useful,
+## but WITHOUT ANY WARRANTY; without even the implied warranty of
+## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+## GNU General Public License for more details.
+##
+## You should have received a copy of the GNU General Public License
+## along with this program.  If not, see <http://www.gnu.org/licenses/>.
+##
+## SPDX-License-Identifier: GPL-3.0-or-later
+
 function pick_points(raw_nikon, raw_apertus)
 
     % Pick points from the two images (interactive)
     pick_all_points(raw_nikon, 'reference');
     pick_all_points(raw_apertus, 'test');
-    
+
     % Now, all points will be saved in ref_points.mat and tst_points.mat.
     % Next step, run match_images.
 end
@@ -14,7 +31,7 @@ function pick_all_points(raw_image, image_type)
     im = read_cr2(raw_image);
     clf; hold off;
     show_raw(im, 0, max(im(:)), 1/8);
-    
+
     % Zoom on the color chart
     pick_message('Please pick color chart bounding box to zoom on it (two diagonal corners).');
     [x,y] = ginput(2);
@@ -41,7 +58,7 @@ function pick_all_points(raw_image, image_type)
 
     pick_message('Please pick color boxes (centers). Press ENTER when finished.');
     [Xcolor, Ycolor] = pick_boxes(radius, 'r');
-    
+
     % Save points
     % Note that points returned were picked on a half-resolution image, so multiply by 2
     out.Xgray = Xgray * 2 + x1;
@@ -49,7 +66,7 @@ function pick_all_points(raw_image, image_type)
     out.Xcolor = Xcolor * 2 + x1;
     out.Ycolor = Ycolor * 2 + y1;
     out.radius = radius * 2;
-    
+
     if strcmp(image_type, 'reference'),
         ref_points = out;
         save ref_points.mat ref_points
@@ -57,7 +74,7 @@ function pick_all_points(raw_image, image_type)
         tst_points = out;
         save tst_points.mat tst_points
     end
-    
+
     disp('Done.');
 end
 

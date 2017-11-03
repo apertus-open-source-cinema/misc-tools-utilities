@@ -1,23 +1,22 @@
 /*
- * HDMI 4K converter for Axiom BETA footage.
- * 
+ * HDMI 4K converter for AXIOM Beta footage
+ *
  * Copyright (C) 2013 a1ex
- * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the
- * Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor,
- * Boston, MA  02110-1301, USA.
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 #include "stdint.h"
@@ -144,13 +143,13 @@ static int read_ppm_stream(FILE* fp, uint16_t** prgb)
           } else error = 1;
         }
       }
-    
+
     if (fc == EOF)
     {
         fprintf(stderr, "End of file.\n");
         return 0;
     }
-    
+
     CHECK(!(error || nd < 3), "not a valid PPM file\n");
 
     width = dim[0];
@@ -159,13 +158,13 @@ static int read_ppm_stream(FILE* fp, uint16_t** prgb)
     CHECK(prgb && !*prgb, "prgb");
     uint16_t* rgb = malloc(width * height * 2 * 3);
     *prgb = rgb;
-    
+
     int size = fread(rgb, 1, width * height * 2 * 3, fp);
     CHECK(size == width * height * 2 * 3, "fread");
-    
+
     /* PPM is big endian, need to reverse it */
     reverse_bytes_order((void*)rgb, width * height * 2 * 3);
-    
+
     return 1;
 }
 
@@ -173,7 +172,7 @@ static void read_ppm(char* filename, uint16_t** prgb)
 {
     FILE* fp = fopen(filename, "rb");
     CHECK(fp, "could not open %s", filename);
-    
+
     read_ppm_stream(fp, prgb);
 
     fclose(fp);
@@ -194,15 +193,15 @@ static void write_pgm(char* filename, uint16_t * raw, int w, int h)
 {
     fprintf(stderr, "Writing %s...\n", filename);
     FILE* f = fopen(filename, "wb");
-    
+
     write_pgm_stream(f, raw, w, h);
-    
+
     fclose(f);
 }
 
 static int file_exists(char * filename)
 {
-    struct stat buffer;   
+    struct stat buffer;
     return (stat (filename, &buffer) == 0);
 }
 
@@ -218,29 +217,29 @@ static void convert_to_linear(uint16_t * raw, int w, int h)
     double gamma = 0.52;
     double gain = 0.85;
     double offset = 45;
-    
+
     int* lut = malloc(0x10000 * sizeof(lut[0]));
-    
+
     for (int i = 0; i < 0x10000; i++)
     {
         double data = i / 65535.0;
-        
+
         /* undo HDMI 16-235 scaling */
         data = data * (235.0 - 16.0) / 255.0 + 16.0 / 255.0;
-        
+
         /* undo gamma applied from our camera, before recording */
         data = pow(data, 1/gamma);
-        
+
         /* scale the (now linear) values to cover the full 12-bit range,
          * with a black level of 128 */
         lut[i] = COERCE(data * 4095 / gain + 128 - offset, 0, 4095);
     }
-    
+
     for (int i = 0; i < w * h; i++)
     {
         raw[i] = lut[raw[i]];
     }
-    
+
     free(lut);
 }
 
@@ -257,18 +256,18 @@ static void darkframe_subtract(uint16_t* raw, uint16_t* dark, int w, int h)
  * rgbA: R, G1, B
  * rgbB: R',G2, B'
  * ' = delayed by 1 pixel
- * 
+ *
  * The exact placement of pixels might differ.
  * The filters will take care of any differences that may appear,
  * for example, the line swapping bug, which is still present - ping Herbert.
- * 
+ *
  * The black box (recorder or ffmpeg or maybe both) also applies a color matrix
  * to the raw data, which will be undone by these filters as well.
- * 
+ *
  * These filters were designed to be applied before linearization,
- * on Shogun footage transcoded with ffmpeg -vcodec copy 
+ * on Shogun footage transcoded with ffmpeg -vcodec copy
  * (output is different with unprocessed MOVs - ffmpeg bug?)
- * 
+ *
  * Indices:
  *  - Bayer channel: x%2 + 2*(y%2),
  *  - column parity in the HDMI image: (x/2) % 2,
@@ -656,7 +655,7 @@ static void recover_bayer_channel_3(int dx, int dy, uint16_t* raw, uint16_t* rgb
     int ch = dx%2 + (dy%2) * 2;
     int w = width;
     int h = height;
-    
+
     uint16_t* rgb[2] = {rgbA, rgbB};
 
     #pragma omp parallel for
@@ -677,12 +676,12 @@ static void recover_bayer_channel_3(int dx, int dy, uint16_t* raw, uint16_t* rgb
                 {
                     #define filter filters3[ch][c][k][p]
                     #define F(dx,dy) filter[dy+1][dx+1] * rgb[k][(x+dx)*3+p + (y+dy)*w*3]
-                    
+
                     sum +=
                         F(-1,-1) + F(0,-1) + F(1,-1) +
                         F(-1, 0) + F(0, 0) + F(1, 0) +
                         F(-1, 1) + F(0, 1) + F(1, 1) ;
-                    
+
                     #undef F
                     #undef filter
                 }
@@ -1006,7 +1005,7 @@ static void recover_bayer_data_5x5_brute_force(uint16_t* raw, uint16_t* rgbA, ui
                   -192*(int)rgbB[x*3+y*5760 +5756]    +90*(int)rgbB[x*3+y*5760 +5759]   +610*(int)rgbB[x*3+y*5760 +5762]    +29*(int)rgbB[x*3+y*5760 +5765]   -100*(int)rgbB[x*3+y*5760 +5768]
                   +349*(int)rgbB[x*3+y*5760+11516]   -411*(int)rgbB[x*3+y*5760+11519]    +25*(int)rgbB[x*3+y*5760+11522]   +276*(int)rgbB[x*3+y*5760+11525]    -61*(int)rgbB[x*3+y*5760+11528]
             );
-            
+
             raw[2*x+0 + (2*y+1) * (2*width)] = COERCE(red    / 8192, 0, 65535);
             raw[2*x+1 + (2*y+1) * (2*width)] = COERCE(green1 / 8192, 0, 65535);
             raw[2*x+0 + (2*y+0) * (2*width)] = COERCE(green2 / 8192, 0, 65535);
@@ -1134,7 +1133,7 @@ static void recover_bayer_data_3x3_only_A_brute_force(uint16_t* raw, uint16_t* r
                  +1111*(int)rgbA[x*3+y*5760    -1]   +555*(int)rgbA[x*3+y*5760    +2]  +4552*(int)rgbA[x*3+y*5760    +5]
                   -593*(int)rgbA[x*3+y*5760 +5759]  -4139*(int)rgbA[x*3+y*5760 +5762]  +6470*(int)rgbA[x*3+y*5760 +5765]
             );
-            
+
             raw[2*x+0 + (2*y+1) * (2*width)] = COERCE(red    / 8192, 0, 65535);
             raw[2*x+1 + (2*y+1) * (2*width)] = COERCE(green1 / 8192, 0, 65535);
             raw[2*x+0 + (2*y+0) * (2*width)] = COERCE(green2 / 8192, 0, 65535);
@@ -1262,7 +1261,7 @@ static void recover_bayer_data_3x3_only_B_brute_force(uint16_t* raw, uint16_t* r
                   +282*(int)rgbB[x*3+y*5760    -1]  +6696*(int)rgbB[x*3+y*5760    +2]   -401*(int)rgbB[x*3+y*5760    +5]
                    -57*(int)rgbB[x*3+y*5760 +5759]   +909*(int)rgbB[x*3+y*5760 +5762]   +200*(int)rgbB[x*3+y*5760 +5765]
             );
-            
+
             raw[2*x+0 + (2*y+1) * (2*width)] = COERCE(red    / 8192, 0, 65535);
             raw[2*x+1 + (2*y+1) * (2*width)] = COERCE(green1 / 8192, 0, 65535);
             raw[2*x+0 + (2*y+0) * (2*width)] = COERCE(green2 / 8192, 0, 65535);
@@ -1318,14 +1317,14 @@ static int check_frame_pairs(uint16_t* rgbA, uint16_t* rgbB, uint16_t* rgbC, int
      * rgbA: R, G1, B
      * rgbB: R',G2, B'
      * ' = delayed by 1 pixel
-     * 
+     *
      * They may be reversed, and recording can start at every frame,
      * so we will try to autodetect two things:
      * - which is a correct frame pair: frames 1-2 or frames 2-3?
      *   (in other words, do we have to skip one frame?)
      * - inside one pair, which frame is A and which is B?
      *   (sometimes they get swapped - encoder issue?)
-     * 
+     *
      * This routine performs the first check. The second one
      * is done by check_frame_order.
      */
@@ -1340,7 +1339,7 @@ static int check_frame_pairs(uint16_t* rgbA, uint16_t* rgbB, uint16_t* rgbC, int
         bc += ABS((int) rgbB[i] - rgbC[i]);
         ac += ABS((int) rgbA[i] - rgbC[i]);
     }
-    
+
     if (ab == 0 || bc == 0 || ac == 0)
     {
         int a = ((bc == 0) ? 2 : 1) + skipped_frames;
@@ -1348,13 +1347,13 @@ static int check_frame_pairs(uint16_t* rgbA, uint16_t* rgbB, uint16_t* rgbC, int
         fprintf(stderr, "Frames %d and %d are identical.\n", a, b);
         return -1;
     }
-        
+
     fprintf(stderr,
         "Frame deltas : (%d-%d):%.3g, (%d-%d):%.3g\n",
         1 + skipped_frames, 2 + skipped_frames, (double) ab,
         2 + skipped_frames, 3 + skipped_frames, (double) bc
     );
-    
+
     if (ab > bc)
     {
         fprintf(stderr, "Frames %d and %d match (should skip one frame).\n", 2 + skipped_frames, 3 + skipped_frames);
@@ -1441,7 +1440,7 @@ int main(int argc, char** argv)
     }
 
     FILE* pipe = 0;
-    
+
     /* all other arguments are input or output files */
     for (int k = 1; k < argc; k++)
     {
@@ -1451,7 +1450,7 @@ int main(int argc, char** argv)
         char out_filename[256];
 
         fprintf(stderr, "\n%s\n", argv[k]);
-        
+
         if (endswith(argv[k], ".mov") || endswith(argv[k], ".MOV"))
         {
             static char fi[256];
@@ -1554,7 +1553,7 @@ int main(int argc, char** argv)
                 break;
             if (!read_ppm_stream(pipe, swap_frames ? &rgbA : &rgbB))
                 break;
-            
+
             raw = malloc(width * height * 4 * sizeof(raw[0]));
 
             /* process the same file at next iteration */
@@ -1573,10 +1572,10 @@ int main(int argc, char** argv)
         recover_raw_data(raw, rgbA, rgbB);
 
         t1 = omp_get_wtime() - t0;
-        
+
         fprintf(stderr, "Convert to linear...\n");
         convert_to_linear(raw, 2*width, 2*height);
-        
+
         if (dark)
         {
             fprintf(stderr, "Darkframe subtract...\n");
@@ -1600,9 +1599,9 @@ int main(int argc, char** argv)
         free(rgbB); rgbB = 0;
         free(raw);  raw = 0;
     }
-    
+
     if (pipe) pclose(pipe);
     fprintf(stderr, "Done.\n\n");
-    
+
     return 0;
 }

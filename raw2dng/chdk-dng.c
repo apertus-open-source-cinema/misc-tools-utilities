@@ -1,30 +1,31 @@
 /**
  * DNG saving routines ported from CHDK
  * Code stripped down a bit, since we don't care about GPS and advanced exif stuff (at least for now)
- * 
+ *
  * TODO: make it platform-independent and move it to modules.
  */
 
 /*
  * Original code copyright (C) CHDK (GPLv2); ported to Magic Lantern (2013)
- * 
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
  * of the License, or (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the
  * Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor,
  * Boston, MA  02110-1301, USA.
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later
  */
-
 
 #undef RAW_DEBUG_BLACK
 
@@ -171,7 +172,7 @@ static int find_tag_index(struct dir_entry * ifd, int num, unsigned short tag)
     for (i = 0; i < num; i++)
         if (ifd[i].tag == tag)
             return i;
-    
+
     /* should be unreachable */
 #ifdef CONFIG_MAGICLANTERN
     ASSERT(0);
@@ -215,7 +216,7 @@ static int get_type_size(int type)
     case T_BYTE:
     case T_SBYTE:
     case T_UNDEFINED:
-    case T_ASCII:     return 1; 
+    case T_ASCII:     return 1;
     case T_SHORT:
     case T_SSHORT:    return 2;
     case T_LONG:
@@ -415,15 +416,15 @@ static void create_dng_header(struct raw_info * raw_info){
         struct dir_entry* entry;
         int count;                  // Number of entries to be saved
         int entry_count;            // Total number of entries
-    } ifd_list[] = 
+    } ifd_list[] =
     {
-        {ifd0,      DIR_SIZE(ifd0),     DIR_SIZE(ifd0)}, 
-        {ifd1,      DIR_SIZE(ifd1),     DIR_SIZE(ifd1)}, 
-        {exif_ifd,  DIR_SIZE(exif_ifd), DIR_SIZE(exif_ifd)}, 
+        {ifd0,      DIR_SIZE(ifd0),     DIR_SIZE(ifd0)},
+        {ifd1,      DIR_SIZE(ifd1),     DIR_SIZE(ifd1)},
+        {exif_ifd,  DIR_SIZE(exif_ifd), DIR_SIZE(exif_ifd)},
     };
 
     ifd0[DNG_VERSION_INDEX].offset = BE(0x01030000);
-    
+
     ifd1[BADPIXEL_OPCODE_INDEX].type &= ~T_SKIP;
         // Set CFAPattern value
         switch (camera_sensor.cfa_pattern)
@@ -525,7 +526,7 @@ static void create_dng_header(struct raw_info * raw_info){
                 add_val_to_buf(ifd_list[j].entry[i].type & 0xFF, sizeof(short));
                 add_val_to_buf(ifd_list[j].entry[i].count, sizeof(int));
                 size_ext=get_type_size(ifd_list[j].entry[i].type)*ifd_list[j].entry[i].count;
-                if (size_ext<=4) 
+                if (size_ext<=4)
                 {
                     if (ifd_list[j].entry[i].type & T_PTR)
                     {
@@ -539,7 +540,7 @@ static void create_dng_header(struct raw_info * raw_info){
                 else
                 {
                     add_val_to_buf(extra_offset, sizeof(int));
-                    extra_offset += size_ext+(size_ext&1);    
+                    extra_offset += size_ext+(size_ext&1);
                 }
             }
         }
@@ -614,7 +615,7 @@ static void create_thumbnail(struct raw_info * raw_info)
     // these make the patterns the same
     yadj = (camera_sensor.cfa_pattern == 0x01000201) ? 1 : 0;
     xadj = (camera_sensor.cfa_pattern == 0x01020001) ? 1 : 0;
-    
+
     for (i=0; i<dng_th_height; i++)
         for (j=0; j<dng_th_width; j++)
         {
@@ -630,7 +631,7 @@ static void create_thumbnail(struct raw_info * raw_info)
 //-------------------------------------------------------------------
 // Write DNG header, thumbnail and data to file
 
-static void write_dng(FILE* fd, struct raw_info * raw_info) 
+static void write_dng(FILE* fd, struct raw_info * raw_info)
 {
     create_dng_header(raw_info);
     char* rawadr = (void*)raw_info->buffer;
@@ -664,7 +665,7 @@ int save_dng(char* filename, struct raw_info * raw_info)
     raw_info->jpeg.width = raw_info->width;
     raw_info->jpeg.height = raw_info->height;
     #endif
-    
+
     FILE* f = FIO_CreateFile(filename);
     if (!f) return 0;
     write_dng(f, raw_info);

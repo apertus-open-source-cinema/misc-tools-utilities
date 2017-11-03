@@ -1,22 +1,22 @@
-/*
+/**
  * Pattern noise correction
- * Copyright (C) 2015 A1ex
- * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
+ *
+ * Copyright (C) 2015 a1ex
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the
- * Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor,
- * Boston, MA  02110-1301, USA.
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 #include "stdio.h"
@@ -79,7 +79,7 @@ static void horizontal_gradient(int16_t * in, int16_t * out, int w, int h)
     {
         out[i] = in[i-2] - in[i+2];
     }
-    
+
     out[0] = out[1] = out[w*h-1] = out[w*h-2] = 0;
 }
 
@@ -113,7 +113,7 @@ static void horizontal_edge_aware_blur_rggb(
         {
             int p0 = avg_g[x + y*w];
             int num = 0;
-            
+
             /* use different filter strength for highlights vs rest of the picture */
             int strength = (p0 < strength_thr) ? strength_lo/2 : strength_hi/2;
 
@@ -139,7 +139,7 @@ static void horizontal_edge_aware_blur_rggb(
                     break;
                 xl--;
             }
-            
+
             /* now take the medians from this interval */
             for (int xx = xl+1; xx < xr; xx++)
             {
@@ -149,7 +149,7 @@ static void horizontal_edge_aware_blur_rggb(
                 bg[num] = dif_bg[xx + y*w];
                 num++;
             }
-            
+
             int mg1 = median_int_wirth(g1, num);
             int mg2 = median_int_wirth(g2, num);
             int mg = (mg1 + mg2) / 2;
@@ -159,7 +159,7 @@ static void horizontal_edge_aware_blur_rggb(
             out_b [x + y*w] = median_int_wirth(bg, num) + mg;
         }
     }
-    
+
     free(avg_g);
     free(dif_rg);
     free(dif_bg);
@@ -194,11 +194,11 @@ static void fix_column_noise(int16_t * original, int16_t * denoised, int w, int 
             int hgradient = abs(hgrad[x + y*w]);
             int noise_val = noise[x + y*w];
 
-            mask[x + y*w] = 
+            mask[x + y*w] =
                 (noise_val == 0)  ||    /* hack: figure out why does this appear to give much better results, and whether there are side effects */
                 (hgradient > 500) ||    /* mask out pixels on a strong edge, that is clearly not pattern noise */
                 (nonlinear_highlights ? /* row noise is very different in nonlinear (nearly clipped) highlights, compared to the rest of the image */
-                       pixel <= clip_thr : /* NL highlights: mask out normally-exposed areas */ 
+                       pixel <= clip_thr : /* NL highlights: mask out normally-exposed areas */
                        pixel > clip_thr ); /* regular image: mask out nearly-overexposed pixels */
         }
     }
@@ -239,7 +239,7 @@ static void fix_column_noise(int16_t * original, int16_t * denoised, int w, int 
                 noise_row[noise_row_num++] = noise[x + y*w];
             }
         }
-        
+
         int offset = (noise_row_num < 10) ? 0 : -median_int_wirth(noise_row, noise_row_num);
 
         col_offsets[x] = offset;
@@ -251,7 +251,7 @@ static void fix_column_noise(int16_t * original, int16_t * denoised, int w, int 
     memcpy(col_offsets_copy, col_offsets, col_offsets_size);
     int mc = median_int_wirth(col_offsets_copy, w);
     free(col_offsets_copy);
-    
+
     /* almost done, now apply the offsets */
     for (int y = 0; y < h; y++)
     {
@@ -313,10 +313,10 @@ static void fix_column_noise_rggb(int16_t * raw, int16_t * denoised, int w, int 
     int16_t * g1s      = malloc(w/2 * h/2 * sizeof(r[0]));   /* g1 after smoothing */
     int16_t * g2s      = malloc(w/2 * h/2 * sizeof(r[0]));   /* g2 after smoothing */
     int16_t * bs       = malloc(w/2 * h/2 * sizeof(r[0]));   /* b  after smoothing */
-    
+
     int16_t* bayer0[4] = {r, g1, g2, b};
     int16_t* bayers[4] = {rs, g1s, g2s, bs};
-    
+
     double t0,t1,t2,t3,t4;
     t0 = omp_get_wtime();
     /* extract half-res color channels from Bayer data */
@@ -326,11 +326,11 @@ static void fix_column_noise_rggb(int16_t * raw, int16_t * denoised, int w, int 
         extract_channel(raw, bayer0[k],  w, h, (k/2)%2, (k+1)%2);
     }
     t1 = omp_get_wtime();
-    
+
 
     /* fixme: test */
     int clip_thr = 3900*8;
-    
+
     if (denoised)
     {
         # pragma omp parallel for
@@ -352,7 +352,7 @@ static void fix_column_noise_rggb(int16_t * raw, int16_t * denoised, int w, int 
 
     /* fix for both highlights and normally-exposed images */
     /* (could be probably optimized for speed a bit) */
-    
+
     /* disable highlight processing when showing debug information */
     int hl_en = !g_debug_flags;
     for (int hl = 0; hl <= hl_en; hl++)
@@ -399,16 +399,16 @@ void fix_pattern_noise_ex(struct raw_info * raw_info, int16_t * raw, int16_t * d
         printf("Bayer order error\n");
         return;
     }
-    
+
     g_debug_flags = debug_flags;
-    
+
     int w = raw_info->width;
     int h = raw_info->height;
 
     /* in raw16, data is multiplied by 8 */
     /* we need the white level to ignore overexposed areas when looking for pattern noise */
     int white = raw_info->white_level * 8;
-    
+
     /* fix vertical noise, then transpose and repeat for the horizontal one */
     /* not very efficient, but at least avoids duplicate code */
     /* note: when debugging, we process only one direction */
@@ -416,7 +416,7 @@ void fix_pattern_noise_ex(struct raw_info * raw_info, int16_t * raw, int16_t * d
     {
         fix_column_noise_rggb(raw, denoised, w, h, white);
     }
-    
+
     if (row_noise_only || !g_debug_flags || !(g_debug_flags & FIXPN_DBG_COLNOISE))
     {
         double t0,t1,t2,t3;
@@ -437,7 +437,7 @@ void fix_pattern_noise_ex(struct raw_info * raw_info, int16_t * raw, int16_t * d
         t3 = omp_get_wtime();
         printf(" (%.2f %.2f %.2f)", t1-t0, t2-t1, t3-t2);
     }
-    
+
     printf("\n");
 }
 

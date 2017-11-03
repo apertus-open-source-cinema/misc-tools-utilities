@@ -1,11 +1,28 @@
+## Copyright (C) 2016 a1ex
+##
+## This program is free software: you can redistribute it and/or modify
+## it under the terms of the GNU General Public License as published by
+## the Free Software Foundation, either version 3 of the License, or
+## (at your option) any later version.
+##
+## This program is distributed in the hope that it will be useful,
+## but WITHOUT ANY WARRANTY; without even the implied warranty of
+## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+## GNU General Public License for more details.
+##
+## You should have received a copy of the GNU General Public License
+## along with this program.  If not, see <http://www.gnu.org/licenses/>.
+##
+## SPDX-License-Identifier: GPL-3.0-or-later
+
 function lut = it8_luts(Cg_ref,Cc_ref,Cg_ovr,Cc_ovr,gxyz_ref)
 
     % compute black levels
     % (these will include any light leaks, which get added to the entire image)
     B_ref = it8_black_levels(Cg_ref, gxyz_ref);
     B_ovr = it8_black_levels(Cg_ovr, gxyz_ref);
-    
-    % concatenate color and grayscale data 
+
+    % concatenate color and grayscale data
     C_ref = [Cg_ref; Cc_ref];
     C_ovr = [Cg_ovr; Cc_ovr];
 
@@ -13,7 +30,7 @@ function lut = it8_luts(Cg_ref,Cc_ref,Cg_ovr,Cc_ovr,gxyz_ref)
     N = size(C_ref,1);
     C_ref = C_ref - ones(N,1) * B_ref;
     C_ovr = C_ovr - ones(N,1) * B_ovr;
-    
+
     % compute a LUT for each channel
     clf, hold on
     lut_r  = compute_lut_spline(C_ref(:,1), C_ovr(:,1), 'r');
@@ -40,12 +57,12 @@ end
 function lut = compute_lut_spline(ref, ovr, color)
     Y = log2(ref);
     X = log2(ovr);
-    
+
     % trickery for csaps to accept non-monotonic inputs
     Y = Y + randn(size(Y)) * 1e-5;
     [Y,o] = sort(Y);
     X = X(o);
-    
+
     % fit the LUT, reversed (from normal to overexposed)
     % because the result is much better this way
     % (the curves for undoing the nonlinearity are really steep)
@@ -53,7 +70,7 @@ function lut = compute_lut_spline(ref, ovr, color)
 
     xlut = log2(1:4096);
     lut = fnval(sp, xlut);
-    
+
     % we don't have shadow data, so the fit is bogus there
     % replace it with a dummy LUT (darken by 2 stops)
     % with a smooth transition to the fitted one
@@ -64,7 +81,7 @@ function lut = compute_lut_spline(ref, ovr, color)
     % plot the normal-to-overexposed LUTs
     plot(log2(ref), log2(ovr), ['.' color]);
     plot(log2(1:4096), lut, 'k', 'linewidth', 2);
-    
+
     % now reverse the LUT (from overexposed to normal)
     lut = 2 .^ interp1(lut, log2(1:4096), log2(1:4096));
     lut(isnan(lut)) = max(lut);
