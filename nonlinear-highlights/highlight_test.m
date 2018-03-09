@@ -1,15 +1,32 @@
-% Main script.
-%
-% This computes a set of LUTs for recovering highlights
-% from the nonlinear region of the sensor response curve
-% (in other words, highlights that would otherwise be clipped to white)
-%
-% You will need:
-% - a custom compilation of octave to allow 16-bit images
-%   ( http://marcelojoeng.blogspot.com/2012/11/compile-octave-using-1632-bits-colour.html )
-% - splines package - http://octave.sourceforge.net/splines/
-% - ufraw
-% - input files will be downloaded from files.apertus.org
+## Main script.
+##
+## This computes a set of LUTs for recovering highlights
+## from the nonlinear region of the sensor response curve
+## (in other words, highlights that would otherwise be clipped to white)
+##
+## You will need:
+## - a custom compilation of octave to allow 16-bit images
+##   ( http://marcelojoeng.blogspot.com/2012/11/compile-octave-using-1632-bits-colour.html )
+## - splines package - http://octave.sourceforge.net/splines/
+## - ufraw
+## - input files will be downloaded from files.apertus.org
+##
+## Copyright (C) 2016 a1ex
+##
+## This program is free software: you can redistribute it and/or modify
+## it under the terms of the GNU General Public License as published by
+## the Free Software Foundation, either version 3 of the License, or
+## (at your option) any later version.
+##
+## This program is distributed in the hope that it will be useful,
+## but WITHOUT ANY WARRANTY; without even the implied warranty of
+## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+## GNU General Public License for more details.
+##
+## You should have received a copy of the GNU General Public License
+## along with this program.  If not, see <http://www.gnu.org/licenses/>.
+##
+## SPDX-License-Identifier: GPL-3.0-or-later
 
 % we need this to use csaps
 pkg load splines

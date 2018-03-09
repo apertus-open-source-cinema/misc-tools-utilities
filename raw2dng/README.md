@@ -2,21 +2,20 @@
 
 DNG converter for apertus° .raw12 files
 
-# Dependencies
+## Dependencies
 
 On Ubuntu you need `build-essential` and `g++-multilib`.
 
 On the AXIOM (Arch Linux), everything should be included.
 
-# Build
+## Build
 
 ```
 make
 ```
 
-# Install
+## Install
 
 ```
 make install
 ```
-

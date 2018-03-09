@@ -1,3 +1,20 @@
+## Copyright (C) 2015 a1ex
+##
+## This program is free software: you can redistribute it and/or modify
+## it under the terms of the GNU General Public License as published by
+## the Free Software Foundation, either version 3 of the License, or
+## (at your option) any later version.
+##
+## This program is distributed in the hope that it will be useful,
+## but WITHOUT ANY WARRANTY; without even the implied warranty of
+## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+## GNU General Public License for more details.
+##
+## You should have received a copy of the GNU General Public License
+## along with this program.  If not, see <http://www.gnu.org/licenses/>.
+##
+## SPDX-License-Identifier: GPL-3.0-or-later
+
 function [R1,G1,B1,R2,G2,B2] = process_hdmi_rgb(R1,G1,B1,R2,G2,B2)
     [R1,G1,B1] = process_hdmi_1(R1,G1,B1);
     [R2,G2,B2] = process_hdmi_1(R2,G2,B2);
@@ -14,7 +31,7 @@ function [R,G,B] = process_hdmi_1(R,G,B)
     if ~HDMI_PROCESS_RGB_COMPRESS || HDMI_PROCESS_YUV_BLUR_SHARPEN || HDMI_PROCESS_YUV_NOISE
         % convert the image to YUV422 8-bit (16-235)
         [Y,U,V] = rgb2yuv422(R,G,B);
-       
+
         % simulate some image filters that might be applied during recording
         if HDMI_PROCESS_YUV_BLUR_SHARPEN
             Y = imfilter(Y, fspecial('disk',1));
@@ -22,17 +39,17 @@ function [R,G,B] = process_hdmi_1(R,G,B)
             U = imfilter(U, fspecial('disk',1));
             V = imfilter(V, fspecial('disk',1));
         end
-       
+
         if HDMI_PROCESS_YUV_NOISE
            Y = uint8(double(Y) + randn(size(Y)));
            U = uint8(double(U) + randn(size(U)));
            V = uint8(double(V) + randn(size(V)));
         end
-       
+
         % back to 8-bit RGB
         [R,G,B] = yuv4222rgb(Y,U,V);
     end
-    
+
     if HDMI_PROCESS_RGB_COMPRESS
         RGB(:,:,1) = uint8(R);
         RGB(:,:,2) = uint8(G);
@@ -47,7 +64,7 @@ function [R,G,B] = process_hdmi_1(R,G,B)
         G = RGB(:,:,2);
         B = RGB(:,:,3);
     end
-    
+
     % expand the output to 0-255
     % (that's how our HDMI recorder seems to behave)
     R = double(R);
@@ -83,7 +100,7 @@ function [R,G,B] = yuv4222rgb(Y,U,V)
     YCBCR(:,:,1) = uint8(Y);
     YCBCR(:,:,2) = uint8(U);
     YCBCR(:,:,3) = uint8(V);
-    RGB = ycbcr2rgb(YCBCR);   
+    RGB = ycbcr2rgb(YCBCR);
     R = RGB(:,:,1);
     G = RGB(:,:,2);
     B = RGB(:,:,3);

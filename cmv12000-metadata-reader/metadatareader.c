@@ -1,22 +1,21 @@
 /*
-----------------------------------------------------------------------------
--- metadatareader.c
---        read the 128x16bit block from an image or from the camera via piped stdin and display it in a human
---	      readable format
---        Version 1.1
---
--- Copyright (C) 2013 - 2014
---		Sebastian Pichelhofer,
---		Simon Larcher,
---		Georg Lippitsch
---
---        This program is free software: you can redistribute it and/or
---        modify it under the terms of the GNU General Public License
---        as published by the Free Software Foundation, either version
---        2 of the License, or (at your option) any later version.
---
-----------------------------------------------------------------------------
-*/
+ * Copyright (C) 2013 - 2014 Sebastian Pichelhofer, Simon Larcher, Georg Lippitsch
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,30 +67,30 @@ void print_binary (uint16_t in, bool swap) {
 
 // extract range of bits with offset and length from LSB
 uint16_t get_bits (uint16_t in, int offset, int length) {
-	uint16_t in1 = in >> offset;	
-	uint16_t in2 = in1 << 16-length;	
-	uint16_t in3 = in2 >> 16-length;	
+	uint16_t in1 = in >> offset;
+	uint16_t in2 = in1 << 16-length;
+	uint16_t in3 = in2 >> 16-length;
 	return in3;
 }
 
 // Contributed by Herbert Poetzl, (loosely) based on CMV12000 documentation
-static inline  
-double  exposure(uint32_t time, int reg82, int reg85, double bits, double lvds)  
+static inline
+double  exposure(uint32_t time, int reg82, int reg85, double bits, double lvds)
 {
 
-        double fot_overlap = (34 * (reg82 & 0xFF)) + 1;  
- 
-        return ((time - 1)*(reg85 + 1) + fot_overlap) *  
-                (bits/lvds) * 1e3;  
-} 
+        double fot_overlap = (34 * (reg82 & 0xFF)) + 1;
+
+        return ((time - 1)*(reg85 + 1) + fot_overlap) *
+                (bits/lvds) * 1e3;
+}
 
 int main (int argc, char* argv[]) {
-	
+
 	//Deal with argument
 	bool raw_register = false;
 	bool swap_endianess = false;
 	if (argc > 1) {
-		if (strcmp (argv[1], "-h") == 0) {	
+		if (strcmp (argv[1], "-h") == 0) {
 			printf( "%s Version 0.1\noptions are:\n-h\tprint this help message\n-r\tprint raw registers\n-swap-endian\tswap endianess of piped binary input", argv[0]);
 			return 0;
 		} else {
@@ -99,7 +98,7 @@ int main (int argc, char* argv[]) {
 				raw_register = true;
 			if (strcmp (argv[1], "-swap-endian") == 0)
 				swap_endianess = true;
-		} 
+		}
 	}
 
 
@@ -127,14 +126,14 @@ int main (int argc, char* argv[]) {
 	double lvds = 300e6;
 	int reg82 = swap_endian(registers[82], swap_endianess);
 	int reg85 = swap_endian(registers[85], swap_endianess);
-	
+
 	// Header
 	if (raw_register) {
 		printf ("\n-----------------------------------------------------------------------------------\n");
 		printf ("Register\tBinary\t\t\tHex\tDecimal\n");
 		printf ("Register\tName\t\t\tDecimal\t\tMeaning\t\tDescription\n");
 		printf ("-----------------------------------------------------------------------------------\n");
-	
+
 	} else {
 		printf ("\n-------------------------------------------------------------------------------------------------------------------\n");
 		printf ("Register\tName\t\t\tDecimal\t\tMeaning\t\t\tDescription\n");
@@ -152,18 +151,18 @@ int main (int argc, char* argv[]) {
 
 			//Register Number
 	   		printf ("%d:\t\t", i);
-	
+
 			//Binary
 			print_binary(registers[i], swap_endianess);
 
 			//Hex
 			printf ("\t%04X\t", (unsigned int)(swap_endian(registers[i], swap_endianess) & 0xFFFF));
-				
+
 			//Decimal
 			printf ("%u\t\n", (unsigned int)(swap_endian(registers[i], swap_endianess) & 0xFFFF));
 		}
 
-		// Human Readable Register 
+		// Human Readable Register
 		if (i == 0)
 			printf("0\t\tnot used");
 		if (i == 1)
@@ -182,7 +181,7 @@ int main (int argc, char* argv[]) {
 				printf ("Register\tBinary\t\t\tHex\tDecimal\n");
 				printf ("Register\tName\t\t\tDecimal\t\tMeaning\t\tDescription\n");
 				printf ("-----------------------------------------------------------------------------------\n");
-	
+
 			} else {
 				printf ("\n-------------------------------------------------------------------------------------------------------------------\n");
 				printf ("Register\tName\t\t\tDecimal\t\tMeaning\t\t\tDescription\n");
@@ -226,7 +225,7 @@ int main (int argc, char* argv[]) {
 					break;
 				case 2:
 					printf("Image flipping in Y");
-					break;				
+					break;
 				case 3:
 					printf("Image flipping in X and Y");
 					break;
@@ -312,7 +311,7 @@ int main (int argc, char* argv[]) {
 		}
 		if (i == 80) {
 			printf("\n%u[15:0]\tNumber_frames:\t\t%d\t\t", i, swap_endian(registers[i], swap_endianess));
-			printf("%d\t\t\tNumber of frames to grab and send (intern exp. only)", swap_endian(registers[i], swap_endianess));	
+			printf("%d\t\t\tNumber of frames to grab and send (intern exp. only)", swap_endian(registers[i], swap_endianess));
 		}
 		if (i == 81) {
 			printf("\n%u[4:0]\t\tOutput_mode:\t\t%d\t\t", i,get_bits(swap_endian(registers[i], swap_endianess), 0, 5) );
@@ -390,7 +389,7 @@ int main (int argc, char* argv[]) {
 				printf ("Register\tBinary\t\t\tHex\tDecimal\n");
 				printf ("Register\tName\t\t\tDecimal\t\tMeaning\t\tDescription\n");
 				printf ("-----------------------------------------------------------------------------------\n");
-	
+
 			} else {
 				printf ("\n-------------------------------------------------------------------------------------------------------------------\n");
 				printf ("Register\tName\t\t\tDecimal\t\tMeaning\t\t\tDescription\n");
@@ -505,7 +504,7 @@ int main (int argc, char* argv[]) {
 					break;
 				case 3:
 					printf("x3 gain\t");
-					break;				
+					break;
 				case 7:
 					printf("x4 gain\t");
 					break;

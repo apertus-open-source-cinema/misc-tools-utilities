@@ -1,3 +1,20 @@
+## Copyright (C) 2015 a1ex
+##
+## This program is free software: you can redistribute it and/or modify
+## it under the terms of the GNU General Public License as published by
+## the Free Software Foundation, either version 3 of the License, or
+## (at your option) any later version.
+##
+## This program is distributed in the hope that it will be useful,
+## but WITHOUT ANY WARRANTY; without even the implied warranty of
+## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+## GNU General Public License for more details.
+##
+## You should have received a copy of the GNU General Public License
+## along with this program.  If not, see <http://www.gnu.org/licenses/>.
+##
+## SPDX-License-Identifier: GPL-3.0-or-later
+
 function e = simulate_hdmi(raw, method, arg, output_file)
     % assume raw is in [GB;RG] order
     % method can be:
@@ -10,7 +27,7 @@ function e = simulate_hdmi(raw, method, arg, output_file)
 
     raw = max(raw, 0);
     raw = min(raw, 4095);
-    
+
     g2 = raw(1:2:end,1:2:end);
     b  = raw(1:2:end,2:2:end);
     r  = raw(2:2:end,1:2:end);
@@ -19,13 +36,13 @@ function e = simulate_hdmi(raw, method, arg, output_file)
     % for some reason, this gives perfect alignment with the HDMI output
     g2 = circshift(g2, -1);
     b  = circshift(b, -1);
-    
+
     if (nargout == 0)
         % only check those in interactive mode, for speed
         assert(norm(g1(:)-g2(:)) < norm(r(:)-g1(:)));
         assert(norm(g1(:)-g2(:)) < norm(b(:)-g1(:)));
     end
-    
+
     disp('Encoding image...')
     switch method
         case 'bits'
@@ -35,7 +52,7 @@ function e = simulate_hdmi(raw, method, arg, output_file)
         case 'yuv'
             [Y1,U1,V1,Y2,U2,V2] = encode_yuv(r,g1,g2,b,arg);
     end
-   
+
     disp('Simulating HDMI compression/processing...')
     if (strcmp(method, 'yuv'))
         [Y1,U1,V1,Y2,U2,V2] = process_hdmi_yuv(Y1,U1,V1,Y2,U2,V2);
@@ -46,7 +63,7 @@ function e = simulate_hdmi(raw, method, arg, output_file)
     else
         [R1,G1,B1,R2,G2,B2] = process_hdmi_rgb(R1,G1,B1,R2,G2,B2);
     end
-    
+
     disp('Decoding image...')
     switch method
         case 'bits'
@@ -81,7 +98,7 @@ function e = simulate_hdmi(raw, method, arg, output_file)
             imshow([imraw;imhdmi]);
         end
     end
-    
+
     % compute MSE between original and recovered raw
     n1 = norm(rr(:)  - r(:));
     n2 = norm(rg1(:) - g1(:));
@@ -94,7 +111,7 @@ function [R,G,B] = yuv2rgb(Y,U,V)
     YCBCR(:,:,1) = uint8(Y);
     YCBCR(:,:,2) = uint8(U);
     YCBCR(:,:,3) = uint8(V);
-    RGB = ycbcr2rgb(YCBCR);   
+    RGB = ycbcr2rgb(YCBCR);
     R = uint8(RGB(:,:,1) * 255);
     G = uint8(RGB(:,:,2) * 255);
     B = uint8(RGB(:,:,3) * 255);

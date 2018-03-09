@@ -1,5 +1,24 @@
-/* based on metadatareader */
-/* extract metadata from the 128x16bit register block, and copy it to DNG (EXIF) */
+/**
+ * based on metadatareader
+ * extract metadata from the 128x16bit register block, and copy it to DNG (EXIF)
+ *
+ * Copyright (C) 2015 a1ex, irieger
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,20 +31,20 @@ typedef int bool;
 #define false 0
 
 // Contributed by Herbert Poetzl, (loosely) based on CMV12000 documentation
-static inline  
-double  exposure(uint32_t time, int reg82, int reg85, double bits, double lvds)  
+static inline
+double  exposure(uint32_t time, int reg82, int reg85, double bits, double lvds)
 {
-        double fot_overlap = (34 * (reg82 & 0xFF)) + 1;  
- 
-        return ((time - 1)*(reg85 + 1) + fot_overlap) *  
-                (bits/lvds) * 1e3;  
-} 
+        double fot_overlap = (34 * (reg82 & 0xFF)) + 1;
+
+        return ((time - 1)*(reg85 + 1) + fot_overlap) *
+                (bits/lvds) * 1e3;
+}
 
 // extract range of bits with offset and length from LSB
 static uint16_t get_bits (uint16_t in, int offset, int length) {
-    uint16_t in1 = in >> offset;    
-    uint16_t in2 = in1 << (16-length);  
-    uint16_t in3 = in2 >> (16-length);  
+    uint16_t in1 = in >> offset;
+    uint16_t in2 = in1 << (16-length);
+    uint16_t in3 = in2 >> (16-length);
     return in3;
 }
 
@@ -86,7 +105,7 @@ int metadata_get_gain(uint16_t registers[128])
         case 7:
             return 4;
     }
-    
+
     return 0;
 }
 
@@ -142,7 +161,7 @@ void metadata_dump_registers(uint16_t registers[128])
         [122]         = "Test_Pattern",
         [127]         = "Temp_sensor",
     };
-    
+
     /* registers with fixed value / do not change */
     const int fv_dnc_regs[128] = {
         [0 ... 127]   = -1,
@@ -166,7 +185,7 @@ void metadata_dump_registers(uint16_t registers[128])
         [125]         = 2,
         [126]         = 770,
     };
-    
+
     for (int i = 0; i < 128; i++)
     {
         if (fv_dnc_regs[i] >= 0)
@@ -197,7 +216,7 @@ void metadata_dump_registers(uint16_t registers[128])
 static void print_plr_settings(uint16_t registers[128])
 {
     int num_slopes = registers[79];
-    
+
     if (num_slopes > 1)
     {
         printf("PLR exposure: %d segments\n", num_slopes);
@@ -209,7 +228,7 @@ static void print_plr_settings(uint16_t registers[128])
         int vtfl3_en = (registers[106] >> 7) & 0x40;
         int vtfl2    = (registers[106]     ) & 0x3F;
         int vtfl3    = (registers[106] >> 7) & 0x3F;
-        
+
         if (vtfl2_en)
         {
             printf("Knee point 1: %.2g ms from %d%% (vtfl2=%d)\n",
@@ -245,11 +264,11 @@ void metadata_extract(uint16_t registers[128])
     if (gain)
     {
         printf("Gain        : x%d%s\n", gain, div ? "/3" : "");
-        
+
         /* this one is a really rough guess */
         dng_set_iso(400 * gain / (div ? 3 : 1));
     }
-    
+
     int offset = metadata_get_dark_offset(registers);
     printf("Offset      : %d\n", offset);
 }

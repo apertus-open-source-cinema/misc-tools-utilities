@@ -1,26 +1,27 @@
-/** 
+/**
  * For decoding 14-bit RAW
- * 
  **/
 
 /*
  * Copyright (C) 2013 Magic Lantern Team
- * 
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
  * of the License, or (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the
  * Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor,
  * Boston, MA  02110-1301, USA.
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
 /**
@@ -175,7 +176,7 @@ struct raw_info {
     #else
     uint32_t do_not_use_this;       // this can't work on 64-bit systems
     #endif
-    
+
     int32_t height, width, pitch;
     int32_t frame_size;
     int32_t bits_per_pixel;         // 14
@@ -247,7 +248,7 @@ extern int raw_lv_is_enabled();
 /* with this macro, the compiler will optimize out the code blocks that depend on LiveView raw support */
 /* (no need to sprinkle the code with #ifdef CONFIG_RAW_LIVEVIEW) */
 /* Q: any way to make this cleaner? (with weak func, the compiler no longer optimizes these things) */
-#define raw_lv_is_enabled() 0 
+#define raw_lv_is_enabled() 0
 #endif
 
 #endif

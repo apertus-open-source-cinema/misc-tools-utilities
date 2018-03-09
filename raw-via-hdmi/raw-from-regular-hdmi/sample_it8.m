@@ -1,3 +1,20 @@
+## Copyright (C) 2016 a1ex
+##
+## This program is free software: you can redistribute it and/or modify
+## it under the terms of the GNU General Public License as published by
+## the Free Software Foundation, either version 3 of the License, or
+## (at your option) any later version.
+##
+## This program is distributed in the hope that it will be useful,
+## but WITHOUT ANY WARRANTY; without even the implied warranty of
+## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+## GNU General Public License for more details.
+##
+## You should have received a copy of the GNU General Public License
+## along with this program.  If not, see <http://www.gnu.org/licenses/>.
+##
+## SPDX-License-Identifier: GPL-3.0-or-later
+
 function [Cg,Cc] = sample_it8(filename_or_im, should_plot)
     marks = [745,239,1667,206,1685,743,754,770];
 
@@ -6,7 +23,7 @@ function [Cg,Cc] = sample_it8(filename_or_im, should_plot)
     else
         im = filename_or_im;
     end
-    
+
     im = im(2:end-1,:);
 
     if should_plot,
@@ -14,7 +31,7 @@ function [Cg,Cc] = sample_it8(filename_or_im, should_plot)
         show_raw(im, 145, 4095);
         hold on;
     end
-    
+
     % extract bottom gray line
     Lx = linspace(-0.003,1.003,25) - 0.001;
     Lx = (Lx(1:end-1) + Lx(2:end)) / 2;
@@ -28,7 +45,7 @@ function [Cg,Cc] = sample_it8(filename_or_im, should_plot)
     [x,y] = xform(Lx(17) * ones(size(Ly(2:end-1))), Ly(2:end-1), marks);
     Cg2 = extract_colors(im, x, y, r, r, 'c', 1, should_plot);
     Cg = [Cg2; Cg];
-    
+
     % extract color data
     [xx,yy] = meshgrid(Lx([2:16 18:end-1]), Ly(2:end-1));
     [x,y] = xform(xx, yy, marks);
@@ -45,12 +62,12 @@ end
 
 function C = extract_colors(im, X, Y, rx, ry, marker_color, rggb, should_plot)
     C = [];
-    
+
     % convert raw data to rgb (without debayering, just half-res)
     [R,G1,G2,B] = raw_to_rggb(im);
-    
+
     X = round(X); Y = round(Y); rx = round(rx); ry = round(ry);
-    
+
     % extract color patches and compute median color
     for i = 1:length(X)
         x = X(i); y = Y(i);

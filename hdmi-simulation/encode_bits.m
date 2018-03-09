@@ -1,3 +1,20 @@
+## Copyright (C) 2015 a1ex
+##
+## This program is free software: you can redistribute it and/or modify
+## it under the terms of the GNU General Public License as published by
+## the Free Software Foundation, either version 3 of the License, or
+## (at your option) any later version.
+##
+## This program is distributed in the hope that it will be useful,
+## but WITHOUT ANY WARRANTY; without even the implied warranty of
+## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+## GNU General Public License for more details.
+##
+## You should have received a copy of the GNU General Public License
+## along with this program.  If not, see <http://www.gnu.org/licenses/>.
+##
+## SPDX-License-Identifier: GPL-3.0-or-later
+
 function [R1,G1,B1,R2,G2,B2] = encode_bits(r,g1,g2,b, bit_order)
     % Encode Bayer raw data (r,g1,g2,b) into two HDMI frames:
     % (R1,G1,B1) and (R2,G2,B2), according to bit_order.
@@ -29,20 +46,20 @@ function [R1,G1,B1,R2,G2,B2] = encode_bits(r,g1,g2,b, bit_order)
     raw = bitor(raw, bitshift(g2,24));
     raw = bitor(raw, bitshift(b, 36));
     raw = bitor(raw, bitshift(1, 49));
-    
+
     rgb2 = uint64(zeros(size(r)));
     for i = 0:47
 %         disp([raw_bit_name(bit_order(i+1)) ' -> ' rgb2_bit_name(i)]);
         rgb2 = bitor(rgb2, bitshift(bit(raw, bit_order(i+1)), i));
     end
-    
+
     R1 = bitand(bitshift(rgb2,  -0), 255);
     G1 = bitand(bitshift(rgb2,  -8), 255);
     B1 = bitand(bitshift(rgb2, -16), 255);
     R2 = bitand(bitshift(rgb2, -24), 255);
     G2 = bitand(bitshift(rgb2, -32), 255);
     B2 = bitand(bitshift(rgb2, -40), 255);
-    
+
     R1 = double(R1); G1 = double(G1); B1 = double(B1);
     R2 = double(R2); G2 = double(G2); B2 = double(B2);
 end
