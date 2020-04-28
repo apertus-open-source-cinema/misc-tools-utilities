@@ -1840,6 +1840,8 @@ int main(int argc, char** argv)
         /* print current settings */
         printf("Resolution  : %d x %d\n", raw_info.width, raw_info.height);
         printf("Frame size  : %d bytes\n", raw_info.frame_size);
+        printf("Metadata    : %s\n", has_metadata ? "yes" : "no");
+        
         switch(raw_info.cfa_pattern) {
             case 0x02010100:
                 printf("Bayer Order : RGGB \n");
