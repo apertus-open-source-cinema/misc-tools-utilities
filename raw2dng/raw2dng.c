@@ -1459,6 +1459,43 @@ static void check_darkframe_iq(struct raw_info * raw_info, int16_t * raw16)
     free(col_avg_evn);
 }
 
+static void check_levels(struct raw_info * raw_info, int16_t * raw16)
+{
+    int w = raw_info->width;
+    int h = raw_info->height;
+    int below = 0;
+    int above = 0;
+
+    for (int y = 0; y < h; y++)
+    {
+        /* skip black columns, just in case */
+        for (int x = 8; x < w - 8; x++)
+        {
+            /* note: raw16 data is multiplied by 8 (12 bits promoted to 15 bits + sign) */
+            int p = raw16[x + y*w] >> 3;
+            below += (p <  raw_info->black_level);   /* crushed blacks */
+            above += (p >= raw_info->white_level);   /* clipped highlights */
+        }
+    }
+
+    double below_percentage = below * 100.0 / (w * h);
+    double above_percentage = above * 100.0 / (w * h);
+
+    /* for some reason, black level in real images is usually lower than in a dark frame (why?) */
+    /* workaround: lower the black level until the image looks "good" ... */
+    /* on a dark frame, this percentage should be close to 50% */
+    const char * below_advice =
+        (check_darkframe) ? (abs(below_percentage - 50) > 10 ? " (not good)" : "")
+                          : ((below_percentage > 1) ? " (try lowering the --black level)" : "");
+
+    /* harsh highlight clipping shouldn't happen on the CMV12000; it appears to use some weak PLR, even if it's not enabled */
+    /* expecting it to clip around 4000, without actually reaching 4095, so highlight details might be recoverable */
+    const char * above_advice = (above_percentage > 1) ? " (check sensor configuration)" : "";
+
+    printf("Below black : %.2f%%%s\n", below_percentage, below_advice);
+    printf("Above white : %.2f%%%s\n", above_percentage, above_advice);
+}
+
 /* pack raw data from 16-bit to 12-bit */
 /* this also adds some anti-posterization noise,
  * which acts somewhat like introducing one extra bit of detail */
@@ -2116,6 +2153,11 @@ int main(int argc, char** argv)
         if (check_darkframe)
         {
             check_darkframe_iq(&raw_info, raw16);
+        }
+
+        if (raw16_postprocessing)
+        {
+            check_levels(&raw_info, raw16);
         }
 
         if (pixel_extract)
