@@ -1826,13 +1826,12 @@ int main(int argc, char** argv)
 
         int width = image_width ? image_width : hdmi_ramdump ? 1920*2 : 4096;
         int height = image_height;
-        int has_metadata = 0;
+
         if (!height)
         {
             /* autodetect height from file size, if not specified in the command line */
             fseek(fi, 0, SEEK_END);
             height = ftell(fi) / (width * 12 / 8);
-            has_metadata = (ftell(fi) - (width * height * 12 / 8) == 256);
             fseek(fi, 0, SEEK_SET);
         }
         raw_set_geometry(width, height, 0, 0, 0, 0);
@@ -1840,8 +1839,7 @@ int main(int argc, char** argv)
         /* print current settings */
         printf("Resolution  : %d x %d\n", raw_info.width, raw_info.height);
         printf("Frame size  : %d bytes\n", raw_info.frame_size);
-        printf("Metadata    : %s\n", has_metadata ? "yes" : "no");
-        
+
         switch(raw_info.cfa_pattern) {
             case 0x02010100:
                 printf("Bayer Order : RGGB \n");
@@ -1881,11 +1879,15 @@ int main(int argc, char** argv)
             meta_gain = 1;
         }
 
-        if (has_metadata)
+        /* attempt to read the metadata block */
+        /* if not present, assume no metadata and print a warning */
+        uint16_t registers[128];
+        int r = fread(registers, 1, 256, fi);
+        if (r == 256)
         {
-            uint16_t registers[128];
-            int r = fread(registers, 1, 256, fi);
-            CHECK(r == 256, "fread");
+            /* the metadata block should be the last thing in the file */
+            /* expecting this call to fail; in that case, it shouldn't modify our output buffer */
+            CHECK(fread(registers, 1, 1, fi) == 0, "unexpected bytes after metadata block");
             metadata_extract(registers);
 
             meta_gain = metadata_get_gain(registers);
@@ -1900,10 +1902,15 @@ int main(int argc, char** argv)
                 goto cleanup;
             }
         }
-        else if (dump_regs)
+        else
         {
-            printf("Metadata block not found.\n");
-            goto cleanup;
+            CHECK(r == 0, "incomplete metadata block?");
+            printf("Metadata    : no\n");
+
+            if (dump_regs)
+            {
+                goto cleanup;
+            }
         }
 
         if (hdmi_ramdump && black_level == 0xFFFF)
