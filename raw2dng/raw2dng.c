@@ -1023,7 +1023,8 @@ static void calc_avgframe_addframe(struct raw_info * raw_info, int16_t * raw16, 
 
     /* find offset */
     int offsets[4];
-    int avg_offset = 0;
+    int avg_offset = raw_info->black_level * 8;
+
     if (!no_blackcol)
     {
         calc_black_columns_offset(raw_info, raw16, offsets, &avg_offset);
@@ -1053,7 +1054,7 @@ static void calc_avgframe_addframe(struct raw_info * raw_info, int16_t * raw16, 
     avg /= h * (w-16);
 
     /* display values scaled back to 12-bit */
-    printf("Average     : %.4f + %d\n", avg/8, avg_offset/8);
+    printf("Average     : %.4f + %g\n", avg/8, avg_offset/8.0);
 
     /* record exposure and mean of each image */
     A.exposures[A.count] = meta_expo;
