@@ -29,5 +29,6 @@ int metadata_get_dark_offset(uint16_t registers[128]);
 double metadata_get_exposure(uint16_t registers[128]);
 int metadata_get_ystart(uint16_t registers[128]);
 int metadata_get_ysize(uint16_t registers[128]);
+int metadata_get_black_col(uint16_t registers[128]);
 
 #endif

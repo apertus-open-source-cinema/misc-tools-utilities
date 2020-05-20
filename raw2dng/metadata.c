@@ -119,9 +119,15 @@ int metadata_get_ystart(uint16_t registers[128])
 {
     return registers[2];
 }
+
 int metadata_get_ysize(uint16_t registers[128])
 {
     return registers[34];
+}
+
+int metadata_get_black_col(uint16_t registers[128])
+{
+    return registers[89] & (1 << 15);
 }
 
 void metadata_dump_registers(uint16_t registers[128])

@@ -1909,6 +1909,7 @@ int main(int argc, char** argv)
         float meta_expo = 0;
         int meta_ystart = 0;
         int meta_ysize = 0;
+        int meta_black_col = 1;     /* assume black columns are enabled */
 
         if (raw16)
         {
@@ -1931,6 +1932,7 @@ int main(int argc, char** argv)
             meta_expo = metadata_get_exposure(registers);
             meta_ystart = metadata_get_ystart(registers);
             meta_ysize = metadata_get_ysize(registers);
+            meta_black_col = metadata_get_black_col(registers);
 
             if (dump_regs)
             {
@@ -2019,6 +2021,17 @@ int main(int argc, char** argv)
         if (!use_darkframe && !calc_darkframe && !calc_dcnuframe)
         {
             no_blackcol = 1;
+        }
+
+        /* check whether black reference columns were enabled in sensor configuration */
+        if (!meta_black_col)
+        {
+            printf("Black refcol: not present\n");
+            no_blackcol = 1;
+        }
+        else
+        {
+            printf("Black refcol: %s\n", no_blackcol ? "ignored" : "enabled");
         }
 
         int raw16_postprocessing = (raw16 ||
