@@ -63,6 +63,7 @@ int black_level = 0;
 int white_level = 4095;
 int image_width = 0;
 int image_height = 0;
+int bayer_order = 0;
 int swap_lines = 0;
 int hdmi_ramdump = 0;
 int pgm_input = 0;
@@ -103,6 +104,7 @@ struct cmd_group options[] = {
             { &image_height,   1, "--height=%d",   "Set image height\n"
                              "                      - default: autodetect from file size\n"
                              "                      - if input is stdin, default is 3072" },
+            { &bayer_order,  1, "--bayer-order=%d", "Set bayer order (1 = RGGB, 2 = GBRG, 3 = GRBG, 4 = BGGR (default: 2 = GBRG)" },
             { &swap_lines,     1,  "--swap-lines", "Swap lines in the raw data\n"
                              "                      - workaround for an old Beta bug" },
             { &hdmi_ramdump,   1,  "--hdmi",       "Assume the input is a memory dump\n"
@@ -1877,6 +1879,23 @@ int main(int argc, char** argv)
         /* print current settings */
         printf("Resolution  : %d x %d\n", raw_info.width, raw_info.height);
         printf("Frame size  : %d bytes\n", raw_info.frame_size);
+
+        if (bayer_order) {
+            switch(bayer_order) {
+                case 1:
+                    raw_info.cfa_pattern = 0x02010100;
+                    break;
+                case 2:
+                    raw_info.cfa_pattern = 0x01000201;
+                    break;
+                case 3:
+                    raw_info.cfa_pattern = 0x01020001;
+                    break;
+                case 4:
+                    raw_info.cfa_pattern = 0x00010102;
+                    break;
+            }
+        }
 
         switch(raw_info.cfa_pattern) {
             case 0x02010100:
