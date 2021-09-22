@@ -59,7 +59,7 @@ static int16_t Lut_B[4096*8];
  */
 float dark_current_avg = 0.06;
 
-int black_level = 128;
+int black_level = 0;
 int white_level = 4095;
 int image_width = 0;
 int image_height = 0;
@@ -94,7 +94,7 @@ int check_darkframe = 0;
 struct cmd_group options[] = {
     {
         "General options", (struct cmd_option[]) {
-            { &black_level,    1, "--black=%d",    "Set black level (default: 128)\n"
+            { &black_level,    1, "--black=%d",    "Set black level (default: 0)\n"
                              "                      - negative values allowed" },
             { &white_level,    1, "--white=%d",    "Set white level (default: 4095)\n"
                              "                      - if too high, you may get pink highlights\n"
