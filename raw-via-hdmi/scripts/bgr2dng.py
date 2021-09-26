@@ -45,14 +45,17 @@ for filename in filenamelist:
                     # write raw12
                     stream = os.popen('montage -size 1920x1080 -depth 8 ' + filenamelist[fileindex] + ' ' + filenamelist[fileindex+1] +
                                       ' -tile 2x1 -geometry +0+0 rgb:' + clipname + f'{frameindex:05}' + '.raw12')
+                    stream.read()
 
                     # write dng
                     print('raw2dng ' + clipname + f'{frameindex:05}' + '.raw12 --width=3840 --height=2160')
                     stream = os.popen('raw2dng ' + clipname + f'{frameindex:05}' + '.raw12 --width=3840 --height=2160')
+                    stream.read()
 
                     # remove raw12
                     print('rm ' + clipname + f'{frameindex:05}' + '.raw12')
                     stream = os.popen('rm ' + clipname + f'{frameindex:05}' + '.raw12')
+                    stream.read()
 
                     frameindex = frameindex + 1
             previousframecounter = framecounter
