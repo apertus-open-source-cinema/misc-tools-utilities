@@ -47,11 +47,11 @@ for filename in filenamelist:
             else:
                 if (first):  # don't report missmatch on first frame
                     print(filename + "\t\t" +
-                          str(framecounter) + "\t\t" + abframe+ "\t\t" + md5)
+                          str(framecounter) + "\t\t" + abframe + "\t\t" + md5)
                     first = False
                 else:
                     print("\033[91m" + filename + "\t\t" + str(framecounter) +
-                          "\t\t" + abframe + "\t\t"  + md5 + "\t\t framecounter missmatch\033[0m")
+                          "\t\t" + abframe + "\t\t" + md5 + "\t\t framecounter missmatch\033[0m")
 
             previousframecounter = framecounter
     else:
