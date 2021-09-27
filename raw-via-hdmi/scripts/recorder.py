@@ -58,9 +58,9 @@ while True:
                 clipindex+=1
                 folderdir = "Clip_" + f'{clipindex:05d}'
 
-        print('ffmpeg start')
-        #stream = os.popen('ffplay ' + videodevice)
-        #output = stream.read()
+        print('ffmpeg -i ' + videodevice + ' -map 0 ' + folderdir + '/' + folderdir + '.rgb')
+        stream = os.popen('ffmpeg -i ' + videodevice + ' -map 0 ' + folderdir + '/' + folderdir + '.rgb')
+        output = stream.read()
 
 
 print("Total: %d GiB" % (total // (2**30)))
