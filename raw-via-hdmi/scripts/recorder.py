@@ -3,6 +3,7 @@ import os
 import sys
 import getopt
 import shutil
+import glob
 
 
 videodevice = "/dev/video0"
@@ -33,10 +34,37 @@ if __name__ == "__main__":
 
 layout = [  [sg.Button('View Stream'), sg.Button('Start Recording')],
             [sg.Text('Free Disk Space: ' + str(space) + "GiB")],
+            [sg.Text('Recording Directory: ')],
+            [sg.Input(), sg.FileBrowse()],
+            [sg.Text('Recordings:')],
+            [sg.Listbox(values=('Loading...', 'Listbox 2', 'Listbox 3'), size=(35, 3), key='-recordings-'), sg.Button('Reload Recordings')],
             [sg.Button('Exit')]]
 
 # Create the Window
 window = sg.Window('AXIOM Recorder', layout)
+
+# Load the recorded clips
+def update_recordings_list():
+    directories = []
+    frames = 0
+
+    for foldername in os.listdir("."):
+        if os.path.isdir(foldername):
+            # Check if there is a folder with an #.rgb file inside
+            if (glob.glob(foldername + '/*.rgb')):
+                #print(foldername) 
+                # check size of *.rgb file to estimate number of frames in it
+                for filename in os.listdir(foldername):
+                    if filename.endswith(".rgb"):
+                        frames = int(os.path.getsize(foldername + '/' + filename)/6220800)
+                directories.append(foldername + '( ' + str(frames) + ' frames)')
+
+    try:
+        window['-recordings-'].update(values=directories)
+    except:
+        window['-recordings-'].update(values=directories)
+
+
 
 # Event Loop to process "events" and get the "values" of the inputs
 while True:
@@ -45,7 +73,9 @@ while True:
         break
     if event == 'View Stream':
         stream = os.popen('ffplay ' + videodevice)
-        output = stream.read()
+        output = stream.read()    
+    if event == 'Reload Recordings':
+        update_recordings_list()
     if event == 'Start Recording':
         folderdir = "Clip_" + f'{clipindex:05d}'
         while 1:
