@@ -1,30 +1,32 @@
 import os
 import sys
 
-stream = os.popen('ls *.bgr | wc -l')
+folder = sys.argv[1]
+
+stream = os.popen('ls ' + folder + '*.bgr | wc -l')
 filescount = stream.read()
 print('bgr files found in current folder: ' + filescount)
 
-filenamelist = os.listdir(".")
+filenamelist = os.listdir(folder + '.')
 filenamelist.sort()
 
 previousframecounter = 0
 first = True
 frameindex = 0
 fileindex = 0
-clipname = "Test_"
+clipname = folder
 
 for filename in filenamelist:
     if filename.endswith(".bgr"):
-        if ((os.path.getsize(filename) > 6220700) & (os.path.getsize(filename) < 6220900)):
+        if ((os.path.getsize(folder + filename) > 6220700) & (os.path.getsize(folder + filename) < 6220900)):
 
             # extract framecounter
-            stream = os.popen('dd if=' + filename +
+            stream = os.popen('dd if=' + folder + filename +
                               ' bs=1 count=1 skip=2 status=none | od -An -vtu1')
             framecounter = int(stream.read().strip("\n"))
 
             # extract a/b frame
-            stream = os.popen('dd if=' + filename +
+            stream = os.popen('dd if=' + folder + filename +
                               ' bs=1 count=1 status=none | od -An -vtu1')
             abframevalue = stream.read().strip("\n")
             abframe = ""
@@ -33,29 +35,31 @@ for filename in filenamelist:
             if (int(abframevalue) == 170):
                 abframe = "B-Frame"
 
+            # convert every pair if an A-Frame exists
             if (abframe == "A-Frame"):
                 # extract framecounter
-                stream = os.popen('dd if=' + filenamelist[fileindex+1] + ' bs=1 count=1 skip=2 status=none | od -An -vtu1')
+                stream = os.popen('dd if=' + folder + filenamelist[fileindex+1] + ' bs=1 count=1 skip=2 status=none | od -An -vtu1')
                 framecounternext = int(stream.read().strip("\n"))
 
+                #only continue if a B frame exists that has a one value higher framecounter  
                 if ((framecounternext == framecounter + 1) | ((framecounternext == 0) & (framecounter == 255))):
-                    print(str(framecounter) + ':\t' + filenamelist[fileindex] + '\t&\t' + str(framecounternext) + ':\t' + filenamelist[fileindex+1] +
-                          '\t-> ' + clipname + f'{frameindex:05}' + '.raw12')
+                    print(str(framecounter) + ':\t' + folder + filenamelist[fileindex] + '\t&\t' + str(framecounternext) + ':\t' + folder + filenamelist[fileindex+1] +
+                          '\t-> ' + folder + clipname.strip('/') + f'_{frameindex:05}' + '.raw12')
 
                     # write raw12
-                    stream = os.popen('montage -size 1920x1080 -depth 8 ' + filenamelist[fileindex] + ' ' + filenamelist[fileindex+1] +
-                                      ' -tile 2x1 -geometry +0+0 rgb:' + clipname + f'{frameindex:05}' + '.raw12')
+                    stream = os.popen('montage -size 1920x1080 -depth 8 ' + folder + filenamelist[fileindex] + ' ' + folder + filenamelist[fileindex+1] +
+                                      ' -tile 2x1 -geometry +0+0 rgb:' + folder + clipname.strip('/') + f'_{frameindex:05}' + '.raw12')
                     stream.read()
 
                     # write dng
-                    print('raw2dng ' + clipname + f'{frameindex:05}' + '.raw12 --width=3840 --height=2160')
-                    stream = os.popen('raw2dng ' + clipname + f'{frameindex:05}' + '.raw12 --width=3840 --height=2160')
+                    print('raw2dng ' + folder + clipname.strip('/') + f'_{frameindex:05}' + '.raw12 --width=3840 --height=2160')
+                    stream = os.popen('raw2dng ' + folder + clipname.strip('/') + f'_{frameindex:05}' + '.raw12 --width=3840 --height=2160')
                     stream.read()
 
                     # remove raw12
-                    print('rm ' + clipname + f'{frameindex:05}' + '.raw12')
-                    stream = os.popen('rm ' + clipname + f'{frameindex:05}' + '.raw12')
-                    stream.read()
+                    #print('rm ' + clipname + f'{frameindex:05}' + '.raw12')
+                    #stream = os.popen('rm ' + clipname + f'{frameindex:05}' + '.raw12')
+                    #stream.read()
 
                     frameindex = frameindex + 1
             previousframecounter = framecounter
