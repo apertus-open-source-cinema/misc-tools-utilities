@@ -23,7 +23,7 @@ q = False
 def main(argv):
     global videodevice
     try:
-        opts, args = getopt.getopt(argv, "d:",
+        opts, args = getopt.getopt(argv, "d:h:",
                                    ["help", "video-device"])
     except getopt.GetoptError:
         print('recorder.py -d <video-device>')
