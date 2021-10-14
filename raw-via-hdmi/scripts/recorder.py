@@ -140,17 +140,12 @@ layout = [[sg.Text('AXIOM Beta HDMI Raw Recorder', font=("Helvetica", 25))],
           [sg.Button('Exit')]]
 
 # Create the Window
-window = sg.Window('AXIOM Recorder', layout, resizable=True)
+window = sg.Window('AXIOM Recorder', layout, resizable=True, finalize=True)
 
-init = False
+update_recordings_list() 
 
 # Event Loop to process "events" and get the "values" of the inputs
 while True:
-
-    if (init):
-        update_recordings_list()  # fixme, does not work
-        init = False
-
     event, values = window.read()
 
     # read line without blocking
