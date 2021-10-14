@@ -113,8 +113,8 @@ def update_clip_info():
                     preview_video_string = 'none'
 
                 # Read and display information about a specific clip
-                window['-clipinfo-'].update('Clipinfo:\nClip: ' + filename + '\ncontains A/B-Frames: ' + str(
-                    frames_rgb) + '\nbgr A/B frames extracted: ' + str(bgr_frame_files_count) + '\nraw12 converted: ' +
+                window['-clipinfo-'].update('Clip: ' + filename + '\ncontains A/B-Frames (bgr): ' + str(
+                    frames_rgb) + '\nA/B frames (bgr) extracted: ' + str(bgr_frame_files_count) + '\nraw12 converted: ' +
                     str(raw12_frame_files_count) + '\nDNG converted: ' + str(dng_frame_files_count) + 
                     '\nPreview Video: ' + preview_video_string)
 
@@ -130,12 +130,12 @@ layout = [[sg.Text('AXIOM Beta HDMI Raw Recorder', font=("Helvetica", 25))],
           [sg.Button('View Stream'), sg.Button('Start Recording')],
           [sg.Text('Recording Directory: ')],
           [sg.Input(os.getcwd(), key='-inputfolder-', enable_events=True), sg.FolderBrowse()],
-          [sg.Text('Recordings:')],
+          [sg.Text('Recordings:'), sg.Button('Reload')],
           [sg.Listbox(values=('Loading...', 'Listbox 2', 'Listbox 3'), size=(
               50, 10), key='-recordings-', enable_events=True), sg.Text('Clipinfo:\n', key='-clipinfo-')],
           [sg.Text('Free Disk Space: ' + str(space) + "GiB")],
-          [sg.Button('Reload Recordings'), sg.Button('Update Clipinfo'), sg.Button(
-              'Extract Frames', key='-extract-'), sg.Button('Convert Frames', key='-convert-')],
+          [sg.Button('Update Clipinfo'), sg.Button('Extract Frames', key='-extract-')],
+          [sg.Text('Convert to:'), sg.Combo(['raw12','dng','raw12&dng'],default_value='raw12&dng',key='-conversion-target-'), sg.Button('Convert Frames', key='-convert-')],
           [sg.Button('Create Preview Video', key='-preview-'), sg.Button('Play Preview Video', key='-playpreview-')],
           [sg.Button('Exit')]]
 
@@ -197,14 +197,12 @@ while True:
         update_clip_info()
 
     if event == '-convert-':
-        foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[
-            0]]
-        print('converting to raw12/dng selected clip: ' + get_rgb_file())
-        #print('python3 bgr2dng.py ' + foldername + '/')
-        #stream = os.popen('python3 bgr2dng.py ' + foldername + '/')
-        #output = stream.read()
+        target = (window['-conversion-target-'].Get())
+        foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[0]]
+        print('converting selected clip: ' + get_rgb_file())
+        #print('python3 bgr-convert.py -i ' + foldername + '/ -t ' + target)
 
-        p = Popen(['python3 bgr2dng.py ' + foldername + '/'], shell=True, stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
+        p = Popen(['python3 bgr-convert.py -i ' + foldername + '/ -t ' + target], shell=True, stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
         q = Queue()
         t = Thread(target=enqueue_output, args=(p.stdout, q))
         t.daemon = True  # thread dies with the program
