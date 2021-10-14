@@ -126,24 +126,31 @@ def get_rgb_file():
             return foldername + '/' + filename
 
 
-layout = [[sg.Button('View Stream'), sg.Button('Start Recording')],
-          [sg.Text('Free Disk Space: ' + str(space) + "GiB")],
+layout = [[sg.Text('AXIOM Beta HDMI Raw Recorder', font=("Helvetica", 25))],
+          [sg.Button('View Stream'), sg.Button('Start Recording')],
           [sg.Text('Recording Directory: ')],
-          [sg.Input(os.getcwd()), sg.FileBrowse()],
+          [sg.Input(os.getcwd()), sg.FolderBrowse()],
           [sg.Text('Recordings:')],
           [sg.Listbox(values=('Loading...', 'Listbox 2', 'Listbox 3'), size=(
-              50, 10), key='-recordings-'), sg.Text('Clipinfo:\n', key='-clipinfo-')],
+              50, 10), key='-recordings-', enable_events=True), sg.Text('Clipinfo:\n', key='-clipinfo-')],
+          [sg.Text('Free Disk Space: ' + str(space) + "GiB")],
           [sg.Button('Reload Recordings'), sg.Button('Update Clipinfo'), sg.Button(
               'Extract Frames', key='-extract-'), sg.Button('Convert Frames', key='-convert-')],
-          [sg.Button('Create Preview Video', key='-preview-'), sg.Button('Play Preview Video', key='-playpreview-'), sg.Button('Exit')]]
+          [sg.Button('Create Preview Video', key='-preview-'), sg.Button('Play Preview Video', key='-playpreview-')],
+          [sg.Button('Exit')]]
 
 # Create the Window
-window = sg.Window('AXIOM Recorder', layout, resizable=True,)
+window = sg.Window('AXIOM Recorder', layout, resizable=True)
 
-init = True
+init = False
 
 # Event Loop to process "events" and get the "values" of the inputs
 while True:
+
+    if (init):
+        update_recordings_list()  # fixme, does not work
+        init = False
+
     event, values = window.read()
 
     # read line without blocking
@@ -155,15 +162,15 @@ while True:
         #else:  # got line
             #print(line)
 
-    if (init):
-        update_recordings_list()  # fixme, does not work
-        init = False
     if event == sg.WIN_CLOSED or event == 'Exit':  # if user closes window or clicks Exit
         break
 
     if event == 'View Stream':
         stream = os.popen('ffplay ' + videodevice)
         output = stream.read()
+    
+    if event == '-recordings-':
+        update_clip_info()
 
     if event == 'Reload Recordings':
         update_recordings_list()
