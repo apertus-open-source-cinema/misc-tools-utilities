@@ -53,7 +53,7 @@ def enqueue_output(out, queue):
 def update_recordings_list():
     directories = []
 
-    for foldername in os.listdir("."):
+    for foldername in os.listdir(window['-inputfolder-'].get()):
         if os.path.isdir(foldername):
             # Check if there is a folder with an #.rgb file inside
             if (glob.glob(foldername + '/*.rgb')):
@@ -129,7 +129,7 @@ def get_rgb_file():
 layout = [[sg.Text('AXIOM Beta HDMI Raw Recorder', font=("Helvetica", 25))],
           [sg.Button('View Stream'), sg.Button('Start Recording')],
           [sg.Text('Recording Directory: ')],
-          [sg.Input(os.getcwd()), sg.FolderBrowse()],
+          [sg.Input(os.getcwd(), key='-inputfolder-', enable_events=True), sg.FolderBrowse()],
           [sg.Text('Recordings:')],
           [sg.Listbox(values=('Loading...', 'Listbox 2', 'Listbox 3'), size=(
               50, 10), key='-recordings-', enable_events=True), sg.Text('Clipinfo:\n', key='-clipinfo-')],
@@ -167,6 +167,9 @@ while True:
     if event == '-recordings-':
         update_clip_info()
 
+    if event == '-inputfolder-':
+        update_recordings_list()
+        
     if event == 'Reload Recordings':
         update_recordings_list()
 
