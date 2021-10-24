@@ -1,45 +1,27 @@
 #!/usr/bin/python
 
-from posixpath import abspath
-import PySimpleGUI as sg
-import os
-import sys
 import getopt
-import shutil
 import glob
+import os
+import shutil
+import sys
+from queue import Queue
 from subprocess import PIPE, Popen
 from threading import Thread
-from queue import Queue, Empty
+
+import PySimpleGUI as sg
 
 ON_POSIX = 'posix' in sys.builtin_module_names
 
-videodevice = "/dev/video0"
+video_device = "/dev/video0"
 total, used, free = shutil.disk_usage(os.getcwd())
-space = free // (2**30)
-clipindex = 0
+space = free // (2 ** 30)
+clip_index = 0
 q = False
 
+window = None
 
-def main(argv):
-    global videodevice
-    try:
-        opts, args = getopt.getopt(argv, "d:h:",
-                                   ["help", "video-device"])
-    except getopt.GetoptError:
-        print('recorder.py -d <video-device>')
-        window.close()
-    for opt, arg in opts:
-        if opt in ("-h", "--help"):
-            print('recorder.py -d <video-device>')
-            sys.exit()
-        elif opt in ("-d", "--video-device"):
-            videodevice = arg.strip()
-
-    print('Using Video Device: ', videodevice)
-
-
-if __name__ == "__main__":
-    main(sys.argv[1:])
+current_stream_process = None
 
 
 def enqueue_output(out, queue):
@@ -47,16 +29,17 @@ def enqueue_output(out, queue):
         queue.put(line)
     out.close()
 
+
 # Load the recorded clips
 
 
 def update_recordings_list():
-    directories = []
+    directories = [("test1", "test2")]
 
     for foldername in os.listdir(window['-inputfolder-'].get()):
         if os.path.isdir(foldername):
             # Check if there is a folder with an #.rgb file inside
-            if (glob.glob(foldername + '/*.rgb')):
+            if glob.glob(foldername + '/*.rgb'):
                 # print(foldername)
                 # check size of *.rgb file to estimate number of frames in it
 
@@ -76,7 +59,7 @@ def update_clip_info():
 
     window['-clipinfo-'].update('Clipinfo:')
 
-    if (window['-recordings-'].Widget.curselection()):
+    if window['-recordings-'].Widget.curselection():
         foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[
             0]]
 
@@ -84,14 +67,14 @@ def update_clip_info():
             if filename.endswith(".rgb"):
                 # How many frames are inside one big .rgb file
                 frames_rgb = int(os.path.getsize(
-                    foldername + '/' + filename)/6220800)
+                    foldername + '/' + filename) / 6220800)
 
                 # How many extracted *.bgr files are in that folder already
                 stream = os.popen('ls ' + foldername + '/*.bgr | wc -l')
                 bgr_frame_files_count = int(stream.read())
 
                 # if all bgr files have been extracted disable the extract button
-                if (bgr_frame_files_count == frames_rgb):
+                if bgr_frame_files_count == frames_rgb:
                     window['-extract-'].Update(disabled=True)
                 else:
                     window['-extract-'].Update(disabled=False)
@@ -107,16 +90,18 @@ def update_clip_info():
                 # Preview video present
                 stream = os.popen('ls ' + foldername + '/' + foldername + '.mp4 | wc -l')
                 preview_video = int(stream.read())
-                if (preview_video):
+                if preview_video:
                     preview_video_string = foldername + '/' + foldername + '.mp4'
                 else:
                     preview_video_string = 'none'
 
                 # Read and display information about a specific clip
                 window['-clipinfo-'].update('Clip: ' + filename + '\ncontains A/B-Frames (bgr): ' + str(
-                    frames_rgb) + '\nA/B frames (bgr) extracted: ' + str(bgr_frame_files_count) + '\nraw12 converted: ' +
-                    str(raw12_frame_files_count) + '\nDNG converted: ' + str(dng_frame_files_count) + 
-                    '\nPreview Video: ' + preview_video_string)
+                    frames_rgb) + '\nA/B frames (bgr) extracted: ' + str(
+                    bgr_frame_files_count) + '\nraw12 converted: ' +
+                                            str(raw12_frame_files_count) + '\nDNG converted: ' + str(
+                    dng_frame_files_count) +
+                                            '\nPreview Video: ' + preview_video_string)
 
 
 def get_rgb_file():
@@ -126,126 +111,215 @@ def get_rgb_file():
             return foldername + '/' + filename
 
 
-layout = [[sg.Text('AXIOM Beta HDMI Raw Recorder', font=("Helvetica", 25))],
-          [sg.Button('View Stream'), sg.Button('Start Recording')],
-          [sg.Text('Recording Directory: ')],
-          [sg.Input(os.getcwd(), key='-inputfolder-', enable_events=True), sg.FolderBrowse()],
-          [sg.Text('Recordings:'), sg.Button('Reload')],
-          [sg.Listbox(values=('Loading...', 'Listbox 2', 'Listbox 3'), size=(
-              50, 10), key='-recordings-', enable_events=True), sg.Text('Clipinfo:\n', key='-clipinfo-')],
-          [sg.Text('Free Disk Space: ' + str(space) + "GiB")],
-          [sg.Button('Update Clipinfo'), sg.Button('Extract Frames', key='-extract-')],
-          [sg.Text('Convert to:'), sg.Combo(['raw12','dng','raw12&dng'],default_value='raw12&dng',key='-conversion-target-'), sg.Button('Convert Frames', key='-convert-')],
-          [sg.Button('Create Preview Video', key='-preview-'), sg.Button('Play Preview Video', key='-playpreview-')],
-          [sg.Button('Exit')]]
+def view_stream():
+    stream = os.popen('ffplay ' + video_device)
+    stream.read()
 
-# Create the Window
-window = sg.Window('AXIOM Recorder', layout, resizable=True, finalize=True)
 
-update_recordings_list() 
+record_button = None
 
-# Event Loop to process "events" and get the "values" of the inputs
-while True:
-    event, values = window.read()
 
-    # read line without blocking
-    if (q):
-        try:
-            line = q.get_nowait()  # or q.get(timeout=.1)
-        except Empty:
-            a=0
-        #else:  # got line
-            #print(line)
+def handle_recording():
+    if current_stream_process is None:
+        start_recording()
+        record_button.update(image_filename="recording_button.png")
+    else:
+        stop_recording()
+        record_button.update(image_filename="record_button.png")
 
-    if event == sg.WIN_CLOSED or event == 'Exit':  # if user closes window or clicks Exit
-        break
 
-    if event == 'View Stream':
-        stream = os.popen('ffplay ' + videodevice)
-        output = stream.read()
-    
-    if event == '-recordings-':
-        update_clip_info()
+def start_recording():
+    global clip_index
+    folderdir = "Clip_" + f'{clip_index:05d}'
+    while 1:
+        if not os.path.exists(folderdir):
+            os.mkdir(folderdir)
+            print("Directory ", folderdir, " Created ")
+            break
+        else:
+            print("Directory ", folderdir, " already exists")
+            clip_index += 1
+            folderdir = "Clip_" + f'{clip_index:05d}'
 
-    if event == '-inputfolder-':
-        update_recordings_list()
-        
-    if event == 'Reload Recordings':
-        update_recordings_list()
+    print('ffmpeg -i ' + video_device + ' -map 0 ' +
+          folderdir + '/' + folderdir + '.rgb')
+    global current_stream_process
+    current_stream_process = Popen('ffmpeg -i ' + video_device +
+                                   ' -map 0 ' + folderdir + '/' + folderdir + '.rgb', shell=True)
+    print("Recording started")
 
-    if event == 'Update Clipinfo':
-        update_clip_info()
 
-    if event == '-extract-':
-        foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[
-            0]]
-        print('splitting selected clip: ' + get_rgb_file())
-        #print ('split ' + get_rgb_file() + ' ' + foldername + '/' + foldername +
-        #           '_frame_ --additional-suffix=.bgr -d -b 6220800 --suffix-length=5')
+def stop_recording():
+    global current_stream_process
+    if current_stream_process is not None:
+        current_stream_process.kill()
 
-        p = Popen(['split ' + get_rgb_file() + ' ' + foldername + '/' + foldername +
-                   '_frame_ --additional-suffix=.bgr -d -b 6220800 --suffix-length=5'], shell=True, stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
-        q = Queue()
-        t = Thread(target=enqueue_output, args=(p.stdout, q))
-        t.daemon = True  # thread dies with the program
-        t.start()
+    print("Recording stopped")
+    current_stream_process = None
+    update_recordings_list()
 
-        # stream = os.popen('split ' + get_rgb_file() + ' ' + foldername + '/' + foldername +
-        #                  '_frame_ --additional-suffix=.bgr -d -b 6220800 --suffix-length=5')
-        #output = stream.read()
 
-        update_clip_info()
+def setup():
+    # Create the Window
+    global record_button
+    record_button = sg.Button('', key=handle_recording, button_color=sg.TRANSPARENT_BUTTON,
+                              image_filename="record_button.png", size=(120, 60), border_width=0)
 
-    if event == '-convert-':
-        target = (window['-conversion-target-'].Get())
-        foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[0]]
-        print('converting selected clip: ' + get_rgb_file())
-        #print('python3 bgr-convert.py -i ' + foldername + '/ -t ' + target)
+    layout = [[sg.Text('AXIOM Beta HDMI Raw Recorder', font=("Helvetica", 25))],
+              [sg.Button('View Stream', key=view_stream),
+               record_button],
+              [sg.Text('Recording Directory: ')],
+              [sg.Input(os.getcwd(), key='-inputfolder-', enable_events=True), sg.FolderBrowse()],
+              [sg.Text('Recordings:'), sg.Button('Reload', key="Reload Recordings")],
+              [sg.Listbox(values=('Loading...', 'Listbox 2', 'Listbox 3'), size=(
+                  50, 10), key='-recordings-', enable_events=True), sg.Text('Clipinfo:\n', key='-clipinfo-')],
+              [sg.Text('Free Disk Space: ' + str(space) + "GiB")],
+              [sg.Button('Update Clipinfo'), sg.Button('Extract Frames', key='-extract-')],
+              [sg.Text('Convert to:'),
+               sg.Combo(['raw12', 'dng', 'raw12&dng'], default_value='raw12&dng', key='-conversion-target-'),
+               sg.Button('Convert Frames', key='-convert-')],
+              [sg.Button('Create Preview Video', key='-preview-'),
+               sg.Button('Play Preview Video', key='-playpreview-')],
+              [sg.Button('Exit')]]
 
-        p = Popen(['python3 bgr-convert.py -i ' + foldername + '/ -t ' + target], shell=True, stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
-        q = Queue()
-        t = Thread(target=enqueue_output, args=(p.stdout, q))
-        t.daemon = True  # thread dies with the program
-        t.start()
+    global window
+    window = sg.Window('AXIOM Recorder', layout, resizable=True, finalize=True)
 
-        update_clip_info()
+    update_recordings_list()
 
-    if event == '-preview-':
-        
-        foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[
-            0]]
 
-        p = Popen(['dcraw -T -h ' + foldername + '/*.DNG && ffmpeg -r 30 -i ' + foldername + '/' +
-         foldername + '_%05d.tiff -c:v libx264 -vf fps=30 ' + foldername + '/' + foldername + '.mp4 && rm ' + foldername + '/*.tiff'],
-          shell=True, stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
-        q = Queue()
-        t = Thread(target=enqueue_output, args=(p.stdout, q))
-        t.daemon = True  # thread dies with the program
-        t.start()
+def main_loop():
+    global clip_index
+    # Event Loop to process "events" and get the "values" of the inputs
+    while True:
+        event, values = window.read()
 
-    if event == '-playpreview-':
-        
-        foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[
-            0]]
-        stream = os.popen('ffplay ' + foldername + '/' + foldername + '.mp4 -vf scale=960:-1')
-        output = stream.read()
+        if callable(event):
+            event()
 
-    if event == 'Start Recording':
-        folderdir = "Clip_" + f'{clipindex:05d}'
-        while 1:
-            if not os.path.exists(folderdir):
-                os.mkdir(folderdir)
-                print("Directory ", folderdir,  " Created ")
-                break
-            else:
-                print("Directory ", folderdir,  " already exists")
-                clipindex += 1
-                folderdir = "Clip_" + f'{clipindex:05d}'
+        # read line without blocking
+        # if (q):
+        #     try:
+        #         line = q.get_nowait()  # or q.get(timeout=.1)
+        #     except Empty:
+        #         a = 0
+        # else:  # got line
+        # print(line)
 
-        print('ffmpeg -i ' + videodevice + ' -map 0 ' +
-              folderdir + '/' + folderdir + '.rgb')
-        stream = os.popen('ffmpeg -i ' + videodevice +
-                          ' -map 0 ' + folderdir + '/' + folderdir + '.rgb')
-        output = stream.read()
+        if event == sg.WIN_CLOSED or event == 'Exit':  # if user closes window or clicks Exit
+            break
 
-window.close()
+        # if event == 'View Stream':
+        #     stream = os.popen('ffplay ' + video_device)
+        #     output = stream.read()
+
+        if event == '-recordings-':
+            update_clip_info()
+
+        if event == '-inputfolder-':
+            update_recordings_list()
+
+        if event == 'Reload Recordings':
+            update_recordings_list()
+
+        if event == 'Update Clipinfo':
+            update_clip_info()
+
+        if event == '-extract-':
+            foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[
+                0]]
+            print('splitting selected clip: ' + get_rgb_file())
+            # print ('split ' + get_rgb_file() + ' ' + foldername + '/' + foldername +
+            #           '_frame_ --additional-suffix=.bgr -d -b 6220800 --suffix-length=5')
+
+            p = Popen(['split ' + get_rgb_file() + ' ' + foldername + '/' + foldername +
+                       '_frame_ --additional-suffix=.bgr -d -b 6220800 --suffix-length=5'], shell=True, stdout=PIPE,
+                      bufsize=1, close_fds=ON_POSIX)
+            q = Queue()
+            t = Thread(target=enqueue_output, args=(p.stdout, q))
+            t.daemon = True  # thread dies with the program
+            t.start()
+
+            # stream = os.popen('split ' + get_rgb_file() + ' ' + foldername + '/' + foldername +
+            #                  '_frame_ --additional-suffix=.bgr -d -b 6220800 --suffix-length=5')
+            # output = stream.read()
+
+            update_clip_info()
+
+        if event == '-convert-':
+            target = (window['-conversion-target-'].Get())
+            foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[0]]
+            print('converting selected clip: ' + get_rgb_file())
+            # print('python3 bgr-convert.py -i ' + foldername + '/ -t ' + target)
+
+            p = Popen(['python3 bgr-convert.py -i ' + foldername + '/ -t ' + target], shell=True, stdout=PIPE,
+                      bufsize=1,
+                      close_fds=ON_POSIX)
+            q = Queue()
+            t = Thread(target=enqueue_output, args=(p.stdout, q))
+            t.daemon = True  # thread dies with the program
+            t.start()
+
+            update_clip_info()
+
+        if event == '-preview-':
+            foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[
+                0]]
+
+            p = Popen(['dcraw -T -h ' + foldername + '/*.DNG && ffmpeg -r 30 -i ' + foldername + '/' +
+                       foldername + '_%05d.tiff -c:v libx264 -vf fps=30 ' + foldername + '/' + foldername + '.mp4 && rm ' + foldername + '/*.tiff'],
+                      shell=True, stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
+            q = Queue()
+            t = Thread(target=enqueue_output, args=(p.stdout, q))
+            t.daemon = True  # thread dies with the program
+            t.start()
+
+        if event == '-playpreview-':
+            foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[
+                0]]
+            stream = os.popen('ffplay ' + foldername + '/' + foldername + '.mp4 -vf scale=960:-1')
+            output = stream.read()
+
+        # if event == 'Start Recording':
+        #     folderdir = "Clip_" + f'{clip_index:05d}'
+        #     while 1:
+        #         if not os.path.exists(folderdir):
+        #             os.mkdir(folderdir)
+        #             print("Directory ", folderdir, " Created ")
+        #             break
+        #         else:
+        #             print("Directory ", folderdir, " already exists")
+        #             clip_index += 1
+        #             folderdir = "Clip_" + f'{clip_index:05d}'
+        #
+        #     print('ffmpeg -i ' + video_device + ' -map 0 ' +
+        #           folderdir + '/' + folderdir + '.rgb')
+        #     stream = os.popen('ffmpeg -i ' + video_device +
+        #                       ' -map 0 ' + folderdir + '/' + folderdir + '.rgb')
+        #     output = stream.read()
+
+
+def main(argv):
+    global video_device, window
+    try:
+        opts, args = getopt.getopt(argv, "d:h:",
+                                   ["help", "video-device"])
+    except getopt.GetoptError:
+        print('recorder.py -d <video-device>')
+        window.close()
+    for opt, arg in opts:
+        if opt in ("-h", "--help"):
+            print('recorder.py -d <video-device>')
+            sys.exit()
+        elif opt in ("-d", "--video-device"):
+            video_device = arg.strip()
+
+    print('Using Video Device: ', video_device)
+
+    setup()
+    main_loop()
+    # window.close()
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
