@@ -34,7 +34,7 @@ def enqueue_output(out, queue):
 
 
 def update_recordings_list():
-    directories = [("test1", "test2")]
+    directories = []
 
     for foldername in os.listdir(window['-inputfolder-'].get()):
         if os.path.isdir(foldername):
@@ -163,9 +163,11 @@ def setup():
     # Create the Window
     global record_button
     record_button = sg.Button('', key=handle_recording, button_color=sg.TRANSPARENT_BUTTON,
-                              image_filename="record_button.png", size=(120, 60), border_width=0)
+                              image_filename="images/record_button.png", size=(120, 60), border_width=0)
 
     layout = [[sg.Text('AXIOM Beta HDMI Raw Recorder', font=("Helvetica", 25))],
+              [sg.Text('AXIOM Beta IP: ')],
+              [sg.Input('192.168.10.106', key='-beta-ip-', enable_events=True), sg.Button('Test Connection', key='-test-ssh-connection-')],
               [sg.Button('View Stream', key=view_stream),
                record_button],
               [sg.Text('Recording Directory: ')],
@@ -224,6 +226,13 @@ def main_loop():
 
         if event == 'Update Clipinfo':
             update_clip_info()
+
+        if event == '-test-ssh-connection-':
+            # todo: test ssh connection to beta
+            # for now we do a ping
+            print ('Testing SSH connection: ' + window['-beta-ip-'].get())
+            stream = os.popen('ping ' + window['-beta-ip-'].get() + ' -c 1')
+            print(stream.read())
 
         if event == '-extract-':
             foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[
