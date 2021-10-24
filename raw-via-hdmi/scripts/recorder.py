@@ -122,10 +122,10 @@ record_button = None
 def handle_recording():
     if current_stream_process is None:
         start_recording()
-        record_button.update(image_filename="recording_button.png")
+        record_button.update(image_filename="images/recording_button.png")
     else:
         stop_recording()
-        record_button.update(image_filename="record_button.png")
+        record_button.update(image_filename="images/record_button.png")
 
 
 def start_recording():
