@@ -34,6 +34,12 @@ def safetofile():
 f = open('recorder.json')
 data = json.load(f)
 
+if 'inputfolder' in data:
+    print('found inputfolder: ' + data['inputfolder'])
+else:
+    print('no input folder found in config, loading default')
+    data['inputfolder'] = os.getcwd()
+
 
 def enqueue_output(out, queue):
     for line in iter(out.readline, b''):
@@ -178,11 +184,11 @@ def setup():
 
     layout = [[sg.Text('AXIOM Beta HDMI Raw Recorder', font=("Helvetica", 25))],
               [sg.Text('AXIOM Beta IP: ')],
-              [sg.Input(data['beta_ip'], key='-beta-ip-', enable_events=True), sg.Button('Test Connection', key='-test-ssh-connection-')],
+              [sg.Input(data['beta_ip'], key='-beta_ip-', enable_events=True), sg.Button('Test Connection', key='-test-ssh-connection-')],
               [sg.Button('View Stream', key=view_stream),
                record_button],
               [sg.Text('Recording Directory: ')],
-              [sg.Input(os.getcwd(), key='-inputfolder-', enable_events=True), sg.FolderBrowse()],
+              [sg.Input(data['inputfolder'], key='-inputfolder-', enable_events=True), sg.FolderBrowse(target='-inputfolder-', initial_folder=data['inputfolder'])],
               [sg.Text('Recordings:'), sg.Button('Reload', key="Reload Recordings")],
               [sg.Listbox(values=('Loading...', 'Listbox 2', 'Listbox 3'), size=(
                   50, 10), key='-recordings-', enable_events=True), sg.Text('Clipinfo:\n', key='-clipinfo-')],
@@ -219,6 +225,7 @@ def main_loop():
             update_clip_info()
 
         if event == '-inputfolder-':
+            data['inputfolder'] = window['-inputfolder-'].get()
             update_recordings_list()
 
         if event == 'Reload Recordings':
@@ -228,12 +235,12 @@ def main_loop():
             update_clip_info()
 
         if event == '-beta-ip-':
-            data['beta_ip'] = window['-beta-ip-'].get()
+            data['beta_ip'] = window['-beta_ip-'].get()
 
         if event == '-test-ssh-connection-':
             # todo: test ssh connection to beta
             # for now we do a ping
-            print ('Testing SSH connection: ' + window['-beta-ip-'].get())
+            print ('Testing SSH connection: ' + window['-beta_ip-'].get())
             stream = os.popen('ping ' + window['-beta-ip-'].get() + ' -c 1')
             print(stream.read())
 
