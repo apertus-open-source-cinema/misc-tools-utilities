@@ -5,6 +5,7 @@ import glob
 import os
 import shutil
 import sys
+import json
 from queue import Queue
 from subprocess import PIPE, Popen
 from threading import Thread
@@ -13,15 +14,25 @@ import PySimpleGUI as sg
 
 ON_POSIX = 'posix' in sys.builtin_module_names
 
+# config data
+data = {}
+
 video_device = "/dev/video0"
 total, used, free = shutil.disk_usage(os.getcwd())
 space = free // (2 ** 30)
 clip_index = 0
 q = False
-
 window = None
-
 current_stream_process = None
+
+# load configs from last session
+def safetofile():
+    with open('recorder.json', 'w') as f:
+        json.dump(data, f)
+
+# load configs from last session
+f = open('recorder.json')
+data = json.load(f)
 
 
 def enqueue_output(out, queue):
@@ -167,7 +178,7 @@ def setup():
 
     layout = [[sg.Text('AXIOM Beta HDMI Raw Recorder', font=("Helvetica", 25))],
               [sg.Text('AXIOM Beta IP: ')],
-              [sg.Input('192.168.10.106', key='-beta-ip-', enable_events=True), sg.Button('Test Connection', key='-test-ssh-connection-')],
+              [sg.Input(data['beta_ip'], key='-beta-ip-', enable_events=True), sg.Button('Test Connection', key='-test-ssh-connection-')],
               [sg.Button('View Stream', key=view_stream),
                record_button],
               [sg.Text('Recording Directory: ')],
@@ -199,21 +210,10 @@ def main_loop():
         if callable(event):
             event()
 
-        # read line without blocking
-        # if (q):
-        #     try:
-        #         line = q.get_nowait()  # or q.get(timeout=.1)
-        #     except Empty:
-        #         a = 0
-        # else:  # got line
-        # print(line)
-
-        if event == sg.WIN_CLOSED or event == 'Exit':  # if user closes window or clicks Exit
+         # if user closes window or clicks Exit
+        if event == sg.WIN_CLOSED or event == 'Exit':  
+            safetofile()
             break
-
-        # if event == 'View Stream':
-        #     stream = os.popen('ffplay ' + video_device)
-        #     output = stream.read()
 
         if event == '-recordings-':
             update_clip_info()
@@ -226,6 +226,9 @@ def main_loop():
 
         if event == 'Update Clipinfo':
             update_clip_info()
+
+        if event == '-beta-ip-':
+            data['beta_ip'] = window['-beta-ip-'].get()
 
         if event == '-test-ssh-connection-':
             # todo: test ssh connection to beta
