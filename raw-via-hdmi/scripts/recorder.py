@@ -3,6 +3,7 @@
 import getopt
 import glob
 import os
+import subprocess
 import shutil
 import sys
 import json
@@ -87,8 +88,11 @@ def update_clip_info():
                     foldername + '/' + filename) / 6220800)
 
                 # How many extracted *.bgr files are in that folder already
-                stream = os.popen('ls ' + foldername + '/*.bgr | wc -l')
-                bgr_frame_files_count = int(stream.read())
+                p1 = subprocess.Popen('ls ' + foldername + '/*.bgr | wc -l', shell=True, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                out, err = p1.communicate() 
+                bgr_frame_files_count = int(out)
+                p1.stdout.close()
+
 
                 # if all bgr files have been extracted disable the extract button
                 if bgr_frame_files_count == frames_rgb:
@@ -97,16 +101,22 @@ def update_clip_info():
                     window['-extract-'].Update(disabled=False)
 
                 # How many *.raw12 files are in that folder already
-                stream = os.popen('ls ' + foldername + '/*.raw12 | wc -l')
-                raw12_frame_files_count = int(stream.read())
+                p1 = subprocess.Popen('ls ' + foldername + '/*.raw12 | wc -l', shell=True, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                out, err = p1.communicate() 
+                raw12_frame_files_count = int(out)
+                p1.stdout.close()
 
                 # How many *.DNG files are in that folder already
-                stream = os.popen('ls ' + foldername + '/*.DNG | wc -l')
-                dng_frame_files_count = int(stream.read())
+                p1 = subprocess.Popen('ls ' + foldername + '/*.DNG | wc -l', shell=True, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                out, err = p1.communicate() 
+                dng_frame_files_count = int(out)
+                p1.stdout.close()
 
-                # Preview video present
-                stream = os.popen('ls ' + foldername + '/' + foldername + '.mp4 | wc -l')
-                preview_video = int(stream.read())
+                # Preview video present?
+                p1 = subprocess.Popen('ls ' + foldername + '/*.mp4 | wc -l', shell=True, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                out, err = p1.communicate() 
+                preview_video = int(out)
+                p1.stdout.close()
                 if preview_video:
                     preview_video_string = foldername + '/' + foldername + '.mp4'
                 else:
