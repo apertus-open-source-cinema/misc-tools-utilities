@@ -19,15 +19,6 @@ def current_milli_time():
     return round(time.time() * 1000)
 
 
-#def raw12_reader(path):
-#    with open(path, 'rb') as f:
-#        for row in range(RAW_HEIGHT):
-#            for col in range(RAW_WIDTH >> 1):
-#                val = f.read(3)
-#                yield (val[0] << 4) | (val[1] >> 4)
-#                yield ((val[1] & 0xF) << 8) | val[2]
-
-
 starttime = current_milli_time()
 
 
@@ -38,7 +29,7 @@ def read_uint12(data_chunk):
     fst_uint12 >>= 4
     snd_uint12 = ((mid_uint8 & 0xF) << 8) | lst_uint8
     snd_uint12 >>= 4
-    return np.reshape(np.concatenate((fst_uint12[:, None], snd_uint12[:, None]), axis=1), 2 * fst_uint12.shape[0])
+    return np.reshape((fst_uint12, snd_uint12), RAW_WIDTH * RAW_HEIGHT)
 
 
 with open(raw12_file, "rb") as f:
