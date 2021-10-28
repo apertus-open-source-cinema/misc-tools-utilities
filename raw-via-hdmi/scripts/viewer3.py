@@ -58,9 +58,15 @@ sg.theme('Reddit')
 
 layout = [
     [
-        [sg.Button('<-' , key='-previous-image-'), sg.Text('Display:'), sg.Radio('monochrome', "-display-mode-", default=True), sg.Radio('color', "-display-mode-", 
-        default=False), sg.Text('Resolution Decimation:'), sg.Radio('1:1', "-decimation-", default=False), sg.Radio('1:2', "-decimation-", default=False),
-        sg.Radio('1:4', "-decimation-", default=True), sg.Radio('1:8', "-decimation-", default=False), sg.Button('->' , key='-next-image-')],
+        [sg.Button('<-' , key='-previous-image-'), sg.Text('Display:'), 
+        sg.Radio('monochrome', "display-mode", key='-display-mode-mono-', default=True, enable_events=True), 
+        sg.Radio('color', "display-mode", key='-display-mode-color-', default=False, enable_events=True), 
+        sg.Text('Resolution Decimation:'), 
+        sg.Radio('1:1', "decimation-mode", key='-decimation1-', default=False, enable_events=True), 
+        sg.Radio('1:2', "decimation-mode", key='-decimation2-', default=False, enable_events=True),
+        sg.Radio('1:4', "decimation-mode", key='-decimation4-', default=True, enable_events=True), 
+        sg.Radio('1:8', "decimation-mode", key='-decimation8-', default=False, enable_events=True), 
+        sg.Button('->' , key='-next-image-')],
         [image_raw]
     ]
 ]
@@ -76,3 +82,39 @@ while True:
     event, values = window.Read()
     if event is None:
         break
+
+    if event == '-next-image-':
+        #todo: switch to next image in same folder
+        print ('next image')
+
+    if event == '-previous-image-':
+        #todo: switch to previous image in same folder
+        print ('previous image')
+
+    if event == '-display-mode-mono-':
+        #todo: switch to mono mode
+        print ('mono mode activated')
+
+    if event == '-display-mode-mono-':
+        #todo: switch to mono mode
+        print ('mono mode activated')
+
+    if event == '-display-mode-color-':
+        #todo: switch to color mode
+        print ('color mode activated')
+
+    if event == '-decimation1-':
+        #todo: rescale to 1:1
+        print ('decimation change 1:1')
+
+    if event == '-decimation2-':
+        #todo: rescale to 1:2
+        print ('decimation change 1:2')
+
+    if event == '-decimation4-':
+        #todo: rescale to 1:4
+        print ('decimation change 1:4')
+
+    if event == '-decimation8-':
+        #todo: rescale to 1:8
+        print ('decimation change 1:8')
