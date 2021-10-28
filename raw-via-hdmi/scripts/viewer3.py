@@ -18,16 +18,6 @@ NUM_REGS = 128
 def current_milli_time():
     return round(time.time() * 1000)
 
-
-# def raw12_reader(path):
-#    with open(path, 'rb') as f:
-#        for row in range(RAW_HEIGHT):
-#            for col in range(RAW_WIDTH >> 1):
-#                val = f.read(3)
-#                yield (val[0] << 4) | (val[1] >> 4)
-#                yield ((val[1] & 0xF) << 8) | val[2]
-
-
 starttime = current_milli_time()
 
 
@@ -37,15 +27,6 @@ def convert_I_to_L(img):
 
 
 def read_uint12(data_chunk):
-    # data = np.frombuffer(data_chunk, dtype=np.uint8)
-    # fst_uint8, mid_uint8, lst_uint8 = np.reshape(data, (data.shape[0] // 3, 3)).astype(np.uint16).T
-    # fst_uint12 = (fst_uint8 << 4) | (mid_uint8 >> 4)
-    # fst_uint12 >>= 4
-    # # fst_uint12 = fst_uint12 / 2
-    # snd_uint12 = ((mid_uint8 & 0xF) << 8) | lst_uint8
-    # # snd_uint12 = snd_uint12 / 16
-    # snd_uint12 >>= 4
-    # return np.reshape((fst_uint12, snd_uint12), RAW_WIDTH * RAW_HEIGHT)
     data = np.frombuffer(data_chunk, dtype=np.uint8)
     fst_uint8, mid_uint8, lst_uint8 = np.reshape(data, (data.shape[0] // 3, 3)).astype(np.uint16).T
     fst_uint12 = (fst_uint8 << 4) + (mid_uint8 >> 4)
@@ -73,16 +54,20 @@ im.thumbnail((RAW_WIDTH / 3, RAW_HEIGHT / 3))
 bio = io.BytesIO()
 im.save(bio, format="PNG")
 image_raw = sg.Image(data=bio.getvalue())
+sg.theme('Reddit')
 
 layout = [
     [
+        [sg.Button('<-' , key='-previous-image-'), sg.Text('Display:'), sg.Radio('monochrome', "-display-mode-", default=True), sg.Radio('color', "-display-mode-", 
+        default=False), sg.Text('Resolution Decimation:'), sg.Radio('1:1', "-decimation-", default=False), sg.Radio('1:2', "-decimation-", default=False),
+        sg.Radio('1:4', "-decimation-", default=True), sg.Radio('1:8', "-decimation-", default=False), sg.Button('->' , key='-next-image-')],
         [image_raw]
     ]
 ]
 
-sg.theme('Reddit')
-window = sg.Window("raw12 Viewer", layout)
-window.Finalize()
+global window
+window = sg.Window("raw12 Viewer: " + raw12_file, layout, layout, element_justification='c', resizable=True, finalize=True)
+#window.Finalize()
 
 displaytime = current_milli_time()
 print('displaying took: ' + str((displaytime - starttime) / 1000) + ' s')
