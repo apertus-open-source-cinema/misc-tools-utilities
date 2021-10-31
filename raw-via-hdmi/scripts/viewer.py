@@ -1,6 +1,6 @@
 #!/usr/bin/python
+import argparse
 import io
-import sys
 import time
 
 import PySimpleGUI as sg
@@ -10,8 +10,6 @@ from PIL import Image
 
 RAW_WIDTH = 3840
 RAW_HEIGHT = 2160
-
-raw12_file = sys.argv[1]
 
 NUM_REGS = 128
 
@@ -40,24 +38,31 @@ def read_uint12(data_chunk):
     return np.reshape(np.concatenate((fst_uint12[:, None], snd_uint12[:, None]), axis=1), 2 * fst_uint12.shape[0])
 
 
-# window.Finalize()
+def read_uint8(data_chunk):
+    data = np.frombuffer(data_chunk, dtype=np.uint8)
+    fst_uint8, mid_uint8, lst_uint8 = np.reshape(data, (data.shape[0] // 3, 3)).astype(np.uint8).T
+    fst_uint12 = fst_uint8
+    snd_uint12 = ((mid_uint8 & 0x0F) << 4) | lst_uint8 >> 4
+    data = np.concatenate((fst_uint12[:, None], snd_uint12[:, None]),
+                          axis=1)
+    return data
 
 
 def setup_images():
-    with open(raw12_file, "rb") as f:
+    with open(args.raw_file, "rb") as f:
         raw_data = np.fromfile(f, dtype=np.uint8)
-        image_data = read_uint12(raw_data)
+        image_data = read_uint8(raw_data)
         image_data = np.reshape(image_data, (RAW_HEIGHT, RAW_WIDTH))
+
+    #cv2.imwrite("8bittest.png", image_data, [cv2.IMWRITE_PNG_COMPRESSION, 0])
 
     global color_image_data, mono_image_data
 
-    monochrome_image = Image.frombytes('I;16', (RAW_WIDTH, RAW_HEIGHT), image_data)
-    monochrome_image = convert_int_to_lum(monochrome_image)
+    monochrome_image = Image.frombytes('L', (RAW_WIDTH, RAW_HEIGHT), image_data)
     monochrome_image.thumbnail((RAW_WIDTH / 3, RAW_HEIGHT / 3))
     monochrome_image.save(mono_image_data, format="PNG")
 
     color_data = cv2.cvtColor(image_data, cv2.COLOR_BAYER_GR2RGB_EA)
-    color_data = (color_data / 256).astype('uint8')
     color_image = Image.frombytes('RGB', (RAW_WIDTH, RAW_HEIGHT), color_data)
     color_image.thumbnail((RAW_WIDTH / 3, RAW_HEIGHT / 3))
     color_image.save(color_image_data, format="PNG")
@@ -82,7 +87,7 @@ def setup_window():
     ]
 
     global window
-    window = sg.Window("raw12 Viewer: " + raw12_file, layout, layout, element_justification='c', resizable=True,
+    window = sg.Window("raw12 Viewer: " + args.raw_file, layout, layout, element_justification='c', resizable=True,
                        finalize=True)
     window.Finalize()
 
@@ -154,4 +159,8 @@ def main():
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='RAW data viewer for apertus° Beta recordings')
+    parser.add_argument('raw_file', help='name/path of .raw12 file')
+    args = parser.parse_args()
+
     main()
