@@ -159,7 +159,7 @@ def main():
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='RAW data viewer for apertus° Beta recordings')
+    parser = argparse.ArgumentParser(description='raw image viewer for apertus° AXIOM images and sequences')
     parser.add_argument('raw_file', help='name/path of .raw12 file')
     args = parser.parse_args()
 
