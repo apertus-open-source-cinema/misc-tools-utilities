@@ -2,7 +2,7 @@
 import argparse
 import io
 import time
-
+import glob, os
 import PySimpleGUI as sg
 import cv2
 import numpy as np
@@ -48,8 +48,8 @@ def read_uint8(data_chunk):
     return data
 
 
-def setup_images():
-    with open(args.raw_file, "rb") as f:
+def setup_images(image_path):
+    with open(image_path, "rb") as f:
         raw_data = np.fromfile(f, dtype=np.uint8)
         image_data = read_uint8(raw_data)
         image_data = np.reshape(image_data, (RAW_HEIGHT, RAW_WIDTH))
@@ -93,15 +93,27 @@ def setup_window():
 
 
 def main_loop():
-    global window
+    global window, current_image_name
     while True:
         event, values = window.Read()
         if event is None:
             break
 
         if event == '-next-image-':
-            # todo: switch to next image in same folder
-            print('next image')
+            # Get list of all files inthe same directory sorted by name
+            list_of_files = sorted(filter(os.path.isfile, glob.glob('*.raw12')))
+            next_image = list_of_files[list_of_files.index(args.raw_file)+1]
+            print('Switching to next image: ' + next_image)
+            
+            # Update window title
+            window.TKroot.title('raw12 Viewer: ' + next_image)
+
+            setup_images(next_image)
+            
+            current_image_name = next_image
+            show_images(mono_image_data)
+            # fixme, title is updated properly but image does not update
+            # todo check if this is the last image in the array
 
         if event == '-previous-image-':
             # todo: switch to previous image in same folder
@@ -144,9 +156,11 @@ def show_images(data=None):
     image_raw.update(data=data.getvalue())
 
 
+
 def main():
     start_time = current_milli_time()
-    setup_images()
+    current_image_name = args.raw_file
+    setup_images(current_image_name)
     read_time = current_milli_time()
     print('reading took: ' + str((read_time - start_time) / 1000) + ' s')
 
