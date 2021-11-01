@@ -102,7 +102,7 @@ def main_loop():
         if event == '-next-image-':
             # Get list of all files inthe same directory sorted by name
             list_of_files = sorted(filter(os.path.isfile, glob.glob('*.raw12')))
-            next_image = list_of_files[list_of_files.index(args.raw_file)+1]
+            next_image = list_of_files[list_of_files.index(current_image_name)+1]
             print('Switching to next image: ' + next_image)
             
             # Update window title
@@ -158,6 +158,7 @@ def show_images(data=None):
 
 
 def main():
+    global current_image_name
     start_time = current_milli_time()
     current_image_name = args.raw_file
     setup_images(current_image_name)
