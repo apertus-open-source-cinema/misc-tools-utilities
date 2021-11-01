@@ -43,8 +43,7 @@ def read_uint8(data_chunk):
     fst_uint8, mid_uint8, lst_uint8 = np.reshape(data, (data.shape[0] // 3, 3)).astype(np.uint8).T
     fst_uint12 = fst_uint8
     snd_uint12 = ((mid_uint8 & 0x0F) << 4) | lst_uint8 >> 4
-    data = np.concatenate((fst_uint12[:, None], snd_uint12[:, None]),
-                          axis=1)
+    data = np.concatenate((fst_uint12[:, None], snd_uint12[:, None]), axis=1)
     return data
 
 
@@ -60,11 +59,13 @@ def setup_images(image_path):
 
     monochrome_image = Image.frombytes('L', (RAW_WIDTH, RAW_HEIGHT), image_data)
     monochrome_image.thumbnail((RAW_WIDTH / 3, RAW_HEIGHT / 3))
+    mono_image_data.seek(0)
     monochrome_image.save(mono_image_data, format="PNG")
 
     color_data = cv2.cvtColor(image_data, cv2.COLOR_BAYER_GR2RGB_EA)
     color_image = Image.frombytes('RGB', (RAW_WIDTH, RAW_HEIGHT), color_data)
     color_image.thumbnail((RAW_WIDTH / 3, RAW_HEIGHT / 3))
+    color_image_data.seek(0)
     color_image.save(color_image_data, format="PNG")
 
 
@@ -91,6 +92,23 @@ def setup_window():
                        finalize=True)
     window.Finalize()
 
+def update_next_image_buttons():
+    # Get list of all files in the same directory sorted by name
+    list_of_files = sorted(filter(os.path.isfile, glob.glob('*.raw12')))
+
+    window['-previous-image-'].Update(disabled=False)
+    window['-next-image-'].Update(disabled=False)
+    
+    # if this is the first image in directory
+    if list_of_files.index(current_image_name) == 0:
+        #print('no further images in this directory')
+        window['-previous-image-'].Update(disabled=True)
+
+    # if this is the last image in the directory
+    if len(list_of_files) == list_of_files.index(current_image_name)+1:
+        #print('no further images in this directory')
+        window['-next-image-'].Update(disabled=True)
+
 
 def main_loop():
     global window, current_image_name
@@ -100,10 +118,32 @@ def main_loop():
             break
 
         if event == '-next-image-':
-            # Get list of all files inthe same directory sorted by name
+            # Get list of all files in the same directory sorted by name
             list_of_files = sorted(filter(os.path.isfile, glob.glob('*.raw12')))
+            
             next_image = list_of_files[list_of_files.index(current_image_name)+1]
             print('Switching to next image: ' + next_image)
+
+            # Update window title
+            window.TKroot.title('raw12 Viewer: ' + next_image)
+
+            setup_images(next_image)
+            
+            current_image_name = next_image
+
+            if window['-display-mode-color-'].get():
+                show_images(color_image_data)
+            else:
+                show_images(mono_image_data)
+
+            update_next_image_buttons()
+
+        if event == '-previous-image-':
+            # Get list of all files in the same directory sorted by name
+            list_of_files = sorted(filter(os.path.isfile, glob.glob('*.raw12')))
+
+            next_image = list_of_files[list_of_files.index(current_image_name)-1]
+            print('Switching to previous image: ' + next_image)
             
             # Update window title
             window.TKroot.title('raw12 Viewer: ' + next_image)
@@ -111,13 +151,13 @@ def main_loop():
             setup_images(next_image)
             
             current_image_name = next_image
-            show_images(mono_image_data)
-            # fixme, title is updated properly but image does not update
-            # todo check if this is the last image in the array
 
-        if event == '-previous-image-':
-            # todo: switch to previous image in same folder
-            print('previous image')
+            if window['-display-mode-color-'].get():
+                show_images(color_image_data)
+            else:
+                show_images(mono_image_data)
+
+            update_next_image_buttons()
 
         if event == '-display-mode-mono-':
             # todo: switch to mono mode
@@ -160,7 +200,7 @@ def show_images(data=None):
 def main():
     global current_image_name
     start_time = current_milli_time()
-    current_image_name = args.raw_file
+    current_image_name = "image1.raw12" #args.raw_file
     setup_images(current_image_name)
     read_time = current_milli_time()
     print('reading took: ' + str((read_time - start_time) / 1000) + ' s')
@@ -169,6 +209,7 @@ def main():
     show_images(mono_image_data)
     display_time = current_milli_time()
     print('displaying took: ' + str((display_time - start_time) / 1000) + ' s')
+    update_next_image_buttons()
 
     main_loop()
 
