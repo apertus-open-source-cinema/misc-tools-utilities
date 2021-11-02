@@ -48,7 +48,21 @@ def read_uint8(data_chunk):
 
 
 def setup_images(image_path):
+    global RAW_WIDTH, RAW_HEIGHT
+
     with open(image_path, "rb") as f:
+
+        file_size = os.path.getsize(image_path)
+        if (file_size == int(4096*3072*12/8)) | (file_size == int(4096*3072*12/8+128*2)):
+            RAW_WIDTH = 4096
+            RAW_HEIGHT = 3072
+        if file_size == int(3840*2160*12/8):
+            RAW_WIDTH = 3840
+            RAW_HEIGHT = 2160
+        if file_size == int(4096*2160*12/8):
+            RAW_WIDTH = 4096
+            RAW_HEIGHT = 2160
+
         raw_data = np.fromfile(f, dtype=np.uint8)
         image_data = read_uint8(raw_data)
         image_data = np.reshape(image_data, (RAW_HEIGHT, RAW_WIDTH))
