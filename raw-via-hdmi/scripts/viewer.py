@@ -109,6 +109,36 @@ def update_next_image_buttons():
         #print('no further images in this directory')
         window['-next-image-'].Update(disabled=True)
 
+def load_image_from_dir(index):
+    global current_image_name
+    # Get list of all files in the same directory sorted by name
+    list_of_files = sorted(filter(os.path.isfile, glob.glob('*.raw12')))
+
+    # First image
+    if ((list_of_files.index(current_image_name) == 0) & (index < 0)):
+        return
+
+    # Last image
+    if ((len(list_of_files) == list_of_files.index(current_image_name)+1) & (index > 0)):
+        return
+
+    
+    next_image = list_of_files[list_of_files.index(current_image_name)+index]
+    print('Switching to image: ' + next_image)
+
+    # Update window title
+    window.TKroot.title('raw12 Viewer: ' + next_image)
+
+    setup_images(next_image)
+    
+    current_image_name = next_image
+
+    if window['-display-mode-color-'].get():
+        show_images(color_image_data)
+    else:
+        show_images(mono_image_data)
+
+    update_next_image_buttons()
 
 def main_loop():
     global window, current_image_name
@@ -117,50 +147,17 @@ def main_loop():
         if event is None:
             break
 
-        if len(event) == 1:
-            print(event, ord(event))
+        if event == 'Right:114':
+            load_image_from_dir(1)
+
+        if event == 'Left:113':
+            load_image_from_dir(-1)
 
         if event == '-next-image-':
-            # Get list of all files in the same directory sorted by name
-            list_of_files = sorted(filter(os.path.isfile, glob.glob('*.raw12')))
-            
-            next_image = list_of_files[list_of_files.index(current_image_name)+1]
-            print('Switching to next image: ' + next_image)
-
-            # Update window title
-            window.TKroot.title('raw12 Viewer: ' + next_image)
-
-            setup_images(next_image)
-            
-            current_image_name = next_image
-
-            if window['-display-mode-color-'].get():
-                show_images(color_image_data)
-            else:
-                show_images(mono_image_data)
-
-            update_next_image_buttons()
+            load_image_from_dir(1)
 
         if event == '-previous-image-':
-            # Get list of all files in the same directory sorted by name
-            list_of_files = sorted(filter(os.path.isfile, glob.glob('*.raw12')))
-
-            next_image = list_of_files[list_of_files.index(current_image_name)-1]
-            print('Switching to previous image: ' + next_image)
-            
-            # Update window title
-            window.TKroot.title('raw12 Viewer: ' + next_image)
-
-            setup_images(next_image)
-            
-            current_image_name = next_image
-
-            if window['-display-mode-color-'].get():
-                show_images(color_image_data)
-            else:
-                show_images(mono_image_data)
-
-            update_next_image_buttons()
+           load_image_from_dir(-1)
 
         if event == '-display-mode-mono-':
             # todo: switch to mono mode
