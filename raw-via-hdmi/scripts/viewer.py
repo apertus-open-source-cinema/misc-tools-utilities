@@ -38,8 +38,13 @@ def read_uint12(data_chunk):
     return np.reshape(np.concatenate((fst_uint12[:, None], snd_uint12[:, None]), axis=1), 2 * fst_uint12.shape[0])
 
 
-def read_uint8(data_chunk):
+def read_uint8(data_chunk, image_path):
     data = np.frombuffer(data_chunk, dtype=np.uint8)
+
+    file_size = os.path.getsize(image_path)
+    if file_size == int(4096*3072*12/8+128*2):
+        data = data[:-256]
+
     fst_uint8, mid_uint8, lst_uint8 = np.reshape(data, (data.shape[0] // 3, 3)).astype(np.uint8).T
     fst_uint12 = fst_uint8
     snd_uint12 = ((mid_uint8 & 0x0F) << 4) | lst_uint8 >> 4
@@ -64,7 +69,7 @@ def setup_images(image_path):
             RAW_HEIGHT = 2160
 
         raw_data = np.fromfile(f, dtype=np.uint8)
-        image_data = read_uint8(raw_data)
+        image_data = read_uint8(raw_data, image_path)
         image_data = np.reshape(image_data, (RAW_HEIGHT, RAW_WIDTH))
 
     #cv2.imwrite("8bittest.png", image_data, [cv2.IMWRITE_PNG_COMPRESSION, 0])
