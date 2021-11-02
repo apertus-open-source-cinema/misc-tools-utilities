@@ -94,40 +94,49 @@ def setup_window():
 
 def update_next_image_buttons():
     # Get list of all files in the same directory sorted by name
-    list_of_files = sorted(filter(os.path.isfile, glob.glob('*.raw12')))
+    subfolder = os.path.dirname(os.path.abspath(current_image_name))
+    list_of_files = sorted(filter(os.path.isfile, glob.glob(subfolder +  '/*.raw12')))
 
     window['-previous-image-'].Update(disabled=False)
     window['-next-image-'].Update(disabled=False)
     
+    # extract indexes with image name match
+    index = [i for i, s in enumerate(list_of_files) if current_image_name in s][0]
+
     # if this is the first image in directory
-    if list_of_files.index(current_image_name) == 0:
+    if index == 0:
         #print('no further images in this directory')
         window['-previous-image-'].Update(disabled=True)
 
     # if this is the last image in the directory
-    if len(list_of_files) == list_of_files.index(current_image_name)+1:
+    if len(list_of_files) == index+1:
         #print('no further images in this directory')
         window['-next-image-'].Update(disabled=True)
 
-def load_image_from_dir(index):
+def load_image_from_dir(targetindex):
     global current_image_name
+
     # Get list of all files in the same directory sorted by name
-    list_of_files = sorted(filter(os.path.isfile, glob.glob('*.raw12')))
+    subfolder = os.path.dirname(os.path.abspath(current_image_name))
+    list_of_files = sorted(filter(os.path.isfile, glob.glob(subfolder +  '/*.raw12')))
+
+    # extract indexes with image name match
+    index = [i for i, s in enumerate(list_of_files) if current_image_name in s][0]
 
     # First image
-    if ((list_of_files.index(current_image_name) == 0) & (index < 0)):
+    if ((index == 0) & (targetindex < 0)):
         return
 
     # Last image
-    if ((len(list_of_files) == list_of_files.index(current_image_name)+1) & (index > 0)):
+    if ((len(list_of_files) == index+1) & (targetindex > 0)):
         return
 
     
-    next_image = list_of_files[list_of_files.index(current_image_name)+index]
+    next_image = list_of_files[index+targetindex]
     print('Switching to image: ' + next_image)
 
     # Update window title
-    window.TKroot.title('raw12 Viewer: ' + next_image)
+    window.set_title('raw12 Viewer: ' + next_image)
 
     setup_images(next_image)
     
@@ -200,7 +209,7 @@ def show_images(data=None):
 def main():
     global current_image_name
     start_time = current_milli_time()
-    current_image_name = "image1.raw12" #args.raw_file
+    current_image_name = args.raw_file
     setup_images(current_image_name)
     read_time = current_milli_time()
     print('reading took: ' + str((read_time - start_time) / 1000) + ' s')
