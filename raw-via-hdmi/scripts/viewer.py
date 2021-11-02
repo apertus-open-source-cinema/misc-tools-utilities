@@ -88,8 +88,8 @@ def setup_window():
     ]
 
     global window
-    window = sg.Window("raw12 Viewer: " + args.raw_file, layout, layout, element_justification='c', resizable=True,
-                       finalize=True)
+    window = sg.Window("raw12 Viewer: " + args.raw_file, layout, element_justification='c', resizable=True, return_keyboard_events=True,
+                       use_default_focus=False, finalize=True)
     window.Finalize()
 
 def update_next_image_buttons():
@@ -116,6 +116,9 @@ def main_loop():
         event, values = window.Read()
         if event is None:
             break
+
+        if len(event) == 1:
+            print(event, ord(event))
 
         if event == '-next-image-':
             # Get list of all files in the same directory sorted by name
