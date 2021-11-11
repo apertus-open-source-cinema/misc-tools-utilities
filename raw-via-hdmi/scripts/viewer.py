@@ -94,8 +94,8 @@ def setup_window():
     layout = [
         [
             [sg.Button('<-', key='-previous-image-'), sg.Text('Display:'),
-             sg.Radio('monochrome', "display-mode", key='-display-mode-mono-', default=True, enable_events=True),
-             sg.Radio('color', "display-mode", key='-display-mode-color-', default=False, enable_events=True),
+             sg.Radio('monochrome', "display-mode", key='-display-mode-mono-', default=False, enable_events=True),
+             sg.Radio('color', "display-mode", key='-display-mode-color-', default=True, enable_events=True),
              sg.Text('Resolution Decimation:'),
              sg.Radio('1:1', "decimation-mode", key='-decimation1-', default=False, enable_events=True),
              sg.Radio('1:2', "decimation-mode", key='-decimation2-', default=False, enable_events=True),
@@ -234,7 +234,7 @@ def main():
     print('reading took: ' + str((read_time - start_time) / 1000) + ' s')
 
     setup_window()
-    show_images(mono_image_data)
+    show_images(color_image_data)
     display_time = current_milli_time()
     print('displaying took: ' + str((display_time - start_time) / 1000) + ' s')
     update_next_image_buttons()
@@ -243,7 +243,7 @@ def main():
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='raw image viewer for apertus° AXIOM images and sequences')
+    parser = argparse.ArgumentParser(description='raw image viewer for apertus° AXIOM recorded images and sequences')
     parser.add_argument('raw_file', help='name/path of .raw12 file')
     args = parser.parse_args()
 
