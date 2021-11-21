@@ -17,5 +17,5 @@ OPTIONS
 
 # Background
 bgr-info reports and exits if there are no corner markers detected in the first *.bgr in the sequence.
-skipped and duplicate frames are reported at the end of the analysis.
+Skipped and duplicate frames are reported at the end of the analysis.
 
