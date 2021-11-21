@@ -37,11 +37,11 @@ def main(argv):
             print_help()
             sys.exit()
         elif opt in ("-w", "--width"):
-            resolution_width = arg.strip()
-            print('Parameter provided: Using resolution width: ' + resolution_width)
+            resolution_width = int(arg.strip())
+            print('Parameter provided: Using resolution width: ' + str(resolution_width))
         elif opt in ("-h", "--height"):
-            resolution_height = arg.strip()
-            print('Parameter provided: Using resolution height: ' + resolution_height)
+            resolution_height = int(arg.strip())
+            print('Parameter provided: Using resolution height: ' + str(resolution_height))
         elif opt in ("-s", "--skip-hash"):
             skipHash = True
             print('Parameter provided: skipping hash creation')
@@ -69,10 +69,33 @@ previousframecounter = 0
 first = True
 skippedFrames = 0
 duplicateFrames = 0
+filesize = resolution_width * resolution_height * 3
 
 for filename in filenamelist:
     if filename.endswith(".bgr"):
-        if ((os.path.getsize(folder + "/" + filename) > 6220700) & (os.path.getsize(folder + "/" + filename) < 6220900)):
+        if ((os.path.getsize(folder + "/" + filename) > filesize - 100) & (os.path.getsize(folder + "/" + filename) < filesize + 100)):
+
+            # check if corner markers are present and matching (A or B Frame indicator) on first image or throw error & exit
+            if first:
+                corner1 = os.popen('dd if=' + folder + "/" + filename +
+                              ' bs=1 count=1 status=none | od -An -vtu1')
+                corner1AB = corner1.read().strip("\n")
+
+                corner2 = os.popen('dd if=' + folder + "/" + filename +
+                              ' bs=1 count=1  skip=' + str((resolution_width-1)*3) + ' status=none | od -An -vtu1')
+                corner2AB = corner2.read().strip("\n")
+
+                corner3 = os.popen('dd if=' + folder + "/" + filename +
+                              ' bs=1 count=1  skip=' + str((resolution_width * (resolution_height-1))*3) + ' status=none | od -An -vtu1')
+                corner3AB = corner3.read().strip("\n")
+
+                corner4 = os.popen('dd if=' + folder + "/" + filename +
+                              ' bs=1 count=1  skip=' + str(filesize - 3) + ' status=none | od -An -vtu1')
+                corner4AB = corner4.read().strip("\n")
+
+                if (not (corner1AB == corner2AB == corner3AB == corner4AB)):
+                    print ("problem with corner markers detected - please verify the provided resolution is correct")
+                    sys.exit()
 
             # extract framecounter
             stream = os.popen('dd if=' + folder + "/" + filename +
