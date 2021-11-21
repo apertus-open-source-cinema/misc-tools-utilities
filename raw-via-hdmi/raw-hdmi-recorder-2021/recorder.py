@@ -10,7 +10,7 @@ import json
 from queue import Queue
 from subprocess import PIPE, Popen
 from threading import Thread
-
+import time
 import PySimpleGUI as sg
 
 ON_POSIX = 'posix' in sys.builtin_module_names
@@ -47,10 +47,10 @@ def enqueue_output(out, queue):
         queue.put(line)
     out.close()
 
+def current_milli_time():
+    return round(time.time() * 1000)
 
 # Load the recorded clips
-
-
 def update_recordings_list():
     directories = []
 
