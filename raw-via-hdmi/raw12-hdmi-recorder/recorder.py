@@ -27,9 +27,14 @@ window = None
 current_stream_process = None
 
 # load configs from last session
-def safetofile():
+def safe_config_to_file():
     with open('recorder.json', 'w') as f:
         json.dump(data, f)
+
+# check if recorder.json exists, create default one if not
+if not os.path.exists('recorder.json'):
+    data['beta_ip'] = "192.168.0.9"
+    safe_config_to_file()
 
 # load configs from last session
 f = open('recorder.json')
@@ -47,8 +52,10 @@ def enqueue_output(out, queue):
         queue.put(line)
     out.close()
 
+
 def current_milli_time():
     return round(time.time() * 1000)
+
 
 # Load the recorded clips
 def update_recordings_list():
@@ -168,8 +175,7 @@ def start_recording():
             clip_index += 1
             folderdir = "Clip_" + f'{clip_index:05d}'
 
-    print('ffmpeg -i ' + video_device + ' -map 0 ' +
-          folderdir + '/' + folderdir + '.rgb')
+    print('ffmpeg -i ' + video_device + ' -map 0 ' + folderdir + '/' + folderdir + '.rgb')
     global current_stream_process
     current_stream_process = Popen('ffmpeg -i ' + video_device +
                                    ' -map 0 ' + folderdir + '/' + folderdir + '.rgb', shell=True)
@@ -181,6 +187,8 @@ def stop_recording():
     if current_stream_process is not None:
         current_stream_process.kill()
 
+    # FIXME: the recording is not really stopped
+
     print("Recording stopped")
     current_stream_process = None
     update_recordings_list()
@@ -191,6 +199,8 @@ def setup():
     global record_button
     record_button = sg.Button('', key=handle_recording, button_color=sg.TRANSPARENT_BUTTON,
                               image_filename="images/record_button.png", size=(120, 60), border_width=0)
+
+    sg.theme('Reddit')
 
     layout = [[sg.Text('AXIOM Beta HDMI Raw Recorder', font=("Helvetica", 25))],
               [sg.Text('AXIOM Beta IP: ')],
@@ -228,7 +238,7 @@ def main_loop():
 
          # if user closes window or clicks Exit
         if event == sg.WIN_CLOSED or event == 'Exit':  
-            safetofile()
+            safe_config_to_file()
             break
 
         if event == '-recordings-':
