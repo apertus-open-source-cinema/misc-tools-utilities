@@ -204,7 +204,8 @@ def setup():
 
     layout = [[sg.Text('AXIOM Beta HDMI Raw Recorder', font=("Helvetica", 25))],
               [sg.Text('AXIOM Beta IP: ')],
-              [sg.Input(data['beta_ip'], key='-beta_ip-', enable_events=True), sg.Button('Test Connection', key='-test-ssh-connection-')],
+              [sg.Input(data['beta_ip'], key='-beta-ip-', enable_events=True), sg.Button('Test Connection', key='-test-ssh-connection-'),
+              sg.Button('Download Sensor Registers', key='-sensor-registers-')],
               [sg.Button('View Stream', key=view_stream),
                record_button],
               [sg.Text('Recording Directory: ')],
@@ -255,13 +256,18 @@ def main_loop():
             update_clip_info()
 
         if event == '-beta-ip-':
-            data['beta_ip'] = window['-beta_ip-'].get()
+            data['beta_ip'] = window['-beta-ip-'].get()
 
         if event == '-test-ssh-connection-':
             # todo: test ssh connection to beta
-            # for now we do a ping
-            print ('Testing SSH connection: ' + window['-beta_ip-'].get())
+            # for now we just do a ping
+            print ('Testing SSH connection: ' + window['-beta-ip-'].get())
             stream = os.popen('ping ' + window['-beta-ip-'].get() + ' -c 1')
+            print(stream.read())
+
+        if event == '-sensor-registers-':
+            print ('Downloading Sensor Registers from: ' + window['-beta-ip-'].get())
+            stream = os.popen('sshpass -e ssh operator@' + window['-beta-ip-'].get() + ' "axiom_snap -e 10ms -r -z" > register_dump')
             print(stream.read())
 
         if event == '-extract-':
