@@ -1,5 +1,9 @@
 #!/usr/bin/python
 
+# SPDX-FileCopyrightText: © 2021 Sebastian Pichelhofer <sp@apertus.org>
+# SPDX-FileCopyrightText: © 2021 Andrej Balyschew <red.falcon1983@googlemail.com>
+# SPDX-License-Identifier: GPL-2.0-or-later
+
 import getopt
 import glob
 import os

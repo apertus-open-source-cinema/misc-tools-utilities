@@ -1,3 +1,8 @@
+#!/usr/bin/python
+
+# SPDX-FileCopyrightText: © 2021 Sebastian Pichelhofer <sp@apertus.org>
+# SPDX-License-Identifier: GPL-2.0-or-later
+
 import os
 import sys
 import getopt
