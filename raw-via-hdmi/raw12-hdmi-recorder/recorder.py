@@ -169,7 +169,7 @@ def handle_recording():
 
 def start_recording():
     global clip_index
-    folderdir = "Clip_" + f'{clip_index:05d}'
+    folderdir = window['-inputfolder-'].get() + "/Clip_" + f'{clip_index:05d}'
     while 1:
         if not os.path.exists(folderdir):
             os.mkdir(folderdir)
@@ -178,12 +178,12 @@ def start_recording():
         else:
             print("Directory ", folderdir, " already exists")
             clip_index += 1
-            folderdir = "Clip_" + f'{clip_index:05d}'
+            folderdir = window['-inputfolder-'].get() + "/Clip_" + f'{clip_index:05d}'
 
-    print('ffmpeg -i ' + video_device + ' -map 0 ' + folderdir + '/' + folderdir + '.rgb')
+    print('ffmpeg -i ' + video_device + ' -map 0 -pix_fmt rgb24 ' + folderdir + '/' + 'Clip_' + f'{clip_index:05d}' + '.rgb')
     global current_stream_process
     current_stream_process = Popen('ffmpeg -i ' + video_device +
-                                   ' -map 0 -pix_fmt rgb24' + folderdir + '/' + folderdir + '.rgb', shell=True)
+                                   ' -map 0 -pix_fmt rgb24 ' + folderdir + '/' + 'Clip_' + f'{clip_index:05d}' + '.rgb', shell=True)
     print("Recording started")
 
 
@@ -204,7 +204,7 @@ def setup():
     global record_button
     #record_button = sg.Button('', key=handle_recording, button_color=sg.TRANSPARENT_BUTTON,
     #                          image_filename="images/record_button.png", size=(120, 60), border_width=0)
-    record_button = sg.Button('Record', key="handle_recording")
+    record_button = sg.Button('Record', key=handle_recording)
 
     sg.theme('Reddit')
 
@@ -309,7 +309,7 @@ def main_loop():
             print('converting selected clip: ' + get_rgb_file())
             # print('python3 bgr-convert.py -i ' + foldername + '/ -t ' + target)
 
-            p = Popen(['python3 ' + os.path.dirname(os.path.realpath(__file__)) + '/rgb-convert.py -i ' + window['-inputfolder-'].get() + '/' + foldername + '/ -t ' + target], shell=True, stdout=PIPE,
+            p = Popen(['python3 ' + os.path.dirname(os.path.realpath(__file__)) + '/frame-convert.py -i ' + window['-inputfolder-'].get() + '/' + foldername + '/ -t ' + target], shell=True, stdout=PIPE,
                       bufsize=1,
                       close_fds=ON_POSIX)
             q = Queue()
