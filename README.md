@@ -1,5 +1,5 @@
 # misc-tools-utilities
 
-Collection of scripts, tools and utilities not specific to a particular camera or hardware.
+Collection of scripts, tools and utilities for AXIOM cameras.
 
-See README of tools for instructions.
+See README of individual tools for further instructions.

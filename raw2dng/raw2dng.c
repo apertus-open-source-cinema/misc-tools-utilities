@@ -64,6 +64,7 @@ int white_level = 4095;
 int image_width = 0;
 int image_height = 0;
 int bayer_order = 0;
+int gain = 0;
 int swap_lines = 0;
 int hdmi_ramdump = 0;
 int pgm_input = 0;
@@ -105,6 +106,7 @@ struct cmd_group options[] = {
                              "                      - default: autodetect from file size\n"
                              "                      - if input is stdin, default is 3072" },
             { &bayer_order,  1, "--bayer-order=%d", "Set bayer order (1 = RGGB, 2 = GBRG, 3 = GRBG, 4 = BGGR (default: 2 = GBRG)" },
+            { &gain,         1, "--gain=%d", "Set analog gain matching image sensor settings if no metadata is provided)" },
             { &swap_lines,     1,  "--swap-lines", "Swap lines in the raw data\n"
                              "                      - workaround for an old Beta bug" },
             { &hdmi_ramdump,   1,  "--hdmi",       "Assume the input is a memory dump\n"
@@ -1931,6 +1933,12 @@ int main(int argc, char** argv)
         int meta_ysize = 0;
         int meta_black_col = 1;     /* assume black columns are enabled */
 
+        if (gain)
+        {
+            /* hack to use dark frames on HDMI data */
+            meta_gain = gain;
+        }
+
         if (raw16)
         {
             /* hack to use dark frames on HDMI data */
@@ -2149,11 +2157,11 @@ int main(int argc, char** argv)
 
         if (calc_darkframe || calc_dcnuframe || calc_gainframe || calc_clipframe)
         {
-            if (meta_ystart || raw_info.height != 3072)
-            {
-                printf("Error: calibration frames must be full-resolution.\n");
-                exit(1);
-            }
+            //if (meta_ystart || raw_info.height != 3072)
+            //{
+            //    printf("Error: calibration frames must be full-resolution.\n");
+            //    exit(1);
+            //}
 
             if ((calc_gainframe || calc_clipframe) && !use_darkframe)
             {
