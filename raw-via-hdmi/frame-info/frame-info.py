@@ -16,10 +16,10 @@ def print_help():
     print('This is bgr-info ' + version)
     print('')
     print('SYNOPSIS')
-    print('\tbgr-info.py [parameters]')
+    print('\trgb-info.py [parameters]')
     print('')
     print('EXAMPLE')
-    print('\tbgr-info.py -w 2048 -h 1080 -i myfolder/')
+    print('\trgb-info.py -w 2048 -h 1080 -i myfolder/')
     print('')
     print('OPTIONS')
     print('\t-w, --width:\t defines image resolution width (default: 1920)')
@@ -61,7 +61,7 @@ if __name__ == "__main__":
 stream = os.popen('ls ' + folder + '/*.bgr | wc -l')
 filescount = stream.read()
 print('folder: ' + folder)
-print('*.bgr files found in folder: ' + filescount)
+print('*.rgb files found in folder: ' + filescount)
 
 print("==========================================================")
 print("filename \t\t framecounter \t A/B frame")
@@ -81,35 +81,35 @@ for filename in filenamelist:
         if ((os.path.getsize(folder + "/" + filename) > filesize - 100) & (os.path.getsize(folder + "/" + filename) < filesize + 100)):
 
             # check if corner markers are present and matching (A or B Frame indicator) on first image or throw error & exit
-            if first:
-                corner1 = os.popen('dd if=' + folder + "/" + filename +
-                              ' bs=1 count=1 status=none | od -An -vtu1')
-                corner1AB = corner1.read().strip("\n")
-
-                corner2 = os.popen('dd if=' + folder + "/" + filename +
-                              ' bs=1 count=1  skip=' + str((resolution_width-1)*3) + ' status=none | od -An -vtu1')
-                corner2AB = corner2.read().strip("\n")
-
-                corner3 = os.popen('dd if=' + folder + "/" + filename +
-                              ' bs=1 count=1  skip=' + str((resolution_width * (resolution_height-1))*3) + ' status=none | od -An -vtu1')
-                corner3AB = corner3.read().strip("\n")
-
-                corner4 = os.popen('dd if=' + folder + "/" + filename +
-                              ' bs=1 count=1  skip=' + str(filesize - 3) + ' status=none | od -An -vtu1')
-                corner4AB = corner4.read().strip("\n")
-
-                if (not (corner1AB == corner2AB == corner3AB == corner4AB)):
-                    print ("problem with corner markers detected - please verify the provided resolution is correct")
-                    sys.exit()
+            #if first:
+            #    corner1 = os.popen('dd if=' + folder + "/" + filename +
+            #                  ' bs=1 count=1 status=none | od -An -vtu1')
+            #    corner1AB = corner1.read().strip("\n")
+#
+            #    corner2 = os.popen('dd if=' + folder + "/" + filename +
+            #                  ' bs=1 count=1  skip=' + str((resolution_width-1)*3) + ' status=none | od -An -vtu1')
+            #    corner2AB = corner2.read().strip("\n")
+#
+            #    corner3 = os.popen('dd if=' + folder + "/" + filename +
+            #                  ' bs=1 count=1  skip=' + str((resolution_width * (resolution_height-1))*3) + ' status=none | od -An -vtu1')
+            #    corner3AB = corner3.read().strip("\n")
+#
+            #    corner4 = os.popen('dd if=' + folder + "/" + filename +
+            #                  ' bs=1 count=1  skip=' + str(filesize - 3) + ' status=none | od -An -vtu1')
+            #    corner4AB = corner4.read().strip("\n")
+#
+            #    if (not (corner1AB == corner2AB == corner3AB == corner4AB)):
+            #        print ("problem with corner markers detected - please verify the provided resolution is correct")
+            #        sys.exit()
 
             # extract framecounter
             stream = os.popen('dd if=' + folder + "/" + filename +
-                              ' bs=1 count=1 skip=2 status=none | od -An -vtu1')
+                              ' bs=1 count=1 status=none | od -An -vtu1')
             framecounter = int(stream.read().strip("\n"))
 
             # extract a/b frame
             stream = os.popen('dd if=' + folder + "/" + filename +
-                              ' bs=1 count=1 status=none | od -An -vtu1')
+                              ' bs=1 count=1 skip=2 status=none | od -An -vtu1')
             abframevalue = stream.read().strip("\n")
             abframe = ""
             if (int(abframevalue) == 85):

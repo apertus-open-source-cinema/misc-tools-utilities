@@ -94,12 +94,13 @@ def update_clip_info():
 
         for filename in os.listdir(window['-inputfolder-'].get() + "/" + foldername):
             if filename.endswith(".rgb"):
+
                 # How many frames are inside one big .rgb file
                 frames_rgb = int(os.path.getsize(
-                    window['-inputfolder-'].get() + "/" + foldername + '/' + filename) / 6220800)
+                    window['-inputfolder-'].get() + "/" + foldername + '/' + foldername + '.rgb') / 6220800)
 
                 # How many extracted *.bgr files are in that folder already
-                p1 = subprocess.Popen('ls ' + window['-inputfolder-'].get() + "/" + foldername + '/*.bgr | wc -l', shell=True, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                p1 = subprocess.Popen('ls ' + window['-inputfolder-'].get() + "/" + foldername + '/*.frame | wc -l', shell=True, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 out, err = p1.communicate() 
                 bgr_frame_files_count = int(out)
                 p1.stdout.close()
@@ -134,8 +135,8 @@ def update_clip_info():
                     preview_video_string = 'none'
 
                 # Read and display information about a specific clip
-                window['-clipinfo-'].update('Clip: ' + filename + '\ncontains A/B-Frames (bgr): ' + str(
-                    frames_rgb) + '\nA/B frames (bgr) extracted: ' + str(
+                window['-clipinfo-'].update('Clip: ' + filename + '\ncontains A/B-Frames: ' + str(
+                    frames_rgb) + '\nA/B frames (rgb) extracted: ' + str(
                     bgr_frame_files_count) + '\nraw12 converted: ' +
                                             str(raw12_frame_files_count) + '\nDNG converted: ' + str(
                     dng_frame_files_count) +
@@ -144,9 +145,9 @@ def update_clip_info():
 
 def get_rgb_file():
     foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[0]]
-    for filename in os.listdir(foldername):
+    for filename in os.listdir(window['-inputfolder-'].get() + '/' + foldername):
         if filename.endswith(".rgb"):
-            return foldername + '/' + filename
+            return window['-inputfolder-'].get() + '/' + foldername + '/' + filename
 
 
 def view_stream():
@@ -182,7 +183,7 @@ def start_recording():
     print('ffmpeg -i ' + video_device + ' -map 0 ' + folderdir + '/' + folderdir + '.rgb')
     global current_stream_process
     current_stream_process = Popen('ffmpeg -i ' + video_device +
-                                   ' -map 0 ' + folderdir + '/' + folderdir + '.rgb', shell=True)
+                                   ' -map 0 -pix_fmt rgb24' + folderdir + '/' + folderdir + '.rgb', shell=True)
     print("Recording started")
 
 
@@ -201,8 +202,9 @@ def stop_recording():
 def setup():
     # Create the Window
     global record_button
-    record_button = sg.Button('', key=handle_recording, button_color=sg.TRANSPARENT_BUTTON,
-                              image_filename="images/record_button.png", size=(120, 60), border_width=0)
+    #record_button = sg.Button('', key=handle_recording, button_color=sg.TRANSPARENT_BUTTON,
+    #                          image_filename="images/record_button.png", size=(120, 60), border_width=0)
+    record_button = sg.Button('Record', key="handle_recording")
 
     sg.theme('Reddit')
 
@@ -272,7 +274,7 @@ def main_loop():
 
         if event == '-init-beta-raw-':
             print ('Connecting to camera and initiatng raw output mode: ' + window['-beta-ip-'].get())
-            stream = os.popen('ssh root@' + window['-beta-ip-'].get() + ' "axiom_start.sh raw"')
+            stream = os.popen('ssh root@' + window['-beta-ip-'].get() + ' "axiom_start.sh raw ; axiom_scn_reg 30 0x7000 ; axiom_raw_mark.sh ; axiom_scn_reg 2 0x100"')
             print(stream.read())
 
         if event == '-sensor-registers-':
@@ -287,8 +289,8 @@ def main_loop():
             # print ('split ' + get_rgb_file() + ' ' + foldername + '/' + foldername +
             #           '_frame_ --additional-suffix=.bgr -d -b 6220800 --suffix-length=5')
 
-            p = Popen(['split ' + get_rgb_file() + ' ' + foldername + '/' + foldername +
-                       '_frame_ --additional-suffix=.bgr -d -b 6220800 --suffix-length=5'], shell=True, stdout=PIPE,
+            p = Popen(['split ' + get_rgb_file() + ' ' + window['-inputfolder-'].get() + '/' + foldername + '/' + foldername +
+                       '_frame_ --additional-suffix=.frame -d -b 6220800 --suffix-length=5'], shell=True, stdout=PIPE,
                       bufsize=1, close_fds=ON_POSIX)
             q = Queue()
             t = Thread(target=enqueue_output, args=(p.stdout, q))
@@ -307,7 +309,7 @@ def main_loop():
             print('converting selected clip: ' + get_rgb_file())
             # print('python3 bgr-convert.py -i ' + foldername + '/ -t ' + target)
 
-            p = Popen(['python3 bgr-convert.py -i ' + foldername + '/ -t ' + target], shell=True, stdout=PIPE,
+            p = Popen(['python3 ' + os.path.dirname(os.path.realpath(__file__)) + '/rgb-convert.py -i ' + window['-inputfolder-'].get() + '/' + foldername + '/ -t ' + target], shell=True, stdout=PIPE,
                       bufsize=1,
                       close_fds=ON_POSIX)
             q = Queue()

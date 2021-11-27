@@ -16,29 +16,31 @@ version = 'V0.2'
 resolution_width = 1920
 resolution_height = 1080
 target = 'raw12&dng'
+clipname = "output"
 
 
 def print_help():
-    print('This is bgr-convert ' + version)
+    print('This is rgb-convert ' + version)
     print('')
     print('SYNOPSIS')
-    print('\tbgr-convert.py [parameters]')
+    print('\trgb-convert.py [parameters]')
     print('')
     print('EXAMPLE')
-    print('\tbgr-convert.py -w 2048 -h 1080 -i myfolder/')
+    print('\trgb-convert.py -w 2048 -h 1080 -i myfolder/')
     print('')
     print('OPTIONS')
     print('\t-w, --width:\t defines image resolution width (default: 1920)')
     print('\t-h, --height:\t defines image resolution height (default: 1080)')
     print('\t-i, --input:\t path to files that should be converted')
     print('\t-t, --target:\t options are: raw12, dng, raw12&dng (default: raw12&dng)')
+    print('\t-n, --clipname:\t output clip file name')
 
 
 def main(argv):
     global folder, resolution_height, resolution_width, target
 
     try:
-        opts, args = getopt.getopt(argv, "h:w:h:t:i:", ["help", "width=", "height=", "target=", "input="])
+        opts, args = getopt.getopt(argv, "h:w:h:t:i:n:", ["help", "width=", "height=", "target=", "input=", "clipname="])
     except getopt.GetoptError:
         print_help()
         sys.exit(2)
@@ -56,6 +58,9 @@ def main(argv):
         elif opt in ("-t", "--target"):
             target = arg.strip()
             print('Target: ', target)
+        elif opt in ("-n", "--clipname"):
+            clipname = arg.strip()
+            print('Target: ', target)
         elif opt in ("-i", "--input"):
             folder = arg.strip()
         else:
@@ -71,15 +76,15 @@ if (folder == ''):
     print_help()
     sys.exit()
 
-stream = os.popen('ls ' + folder + '*.bgr | wc -l')
+stream = os.popen('ls ' + folder + '*.frame | wc -l')
 filescount = stream.read().strip('\n')
-clipname = folder
 
 print('Configuration:')
 print('')
 print('folder:\t\t\t\t', folder)
-print('bgr files found in folder:\t' + filescount)       
+print('frames found in folder:\t' + filescount)       
 print('target:\t\t\t\t' + target)
+print('clipname:\t\t\t\t' + clipname)
 print('source resolution width:\t' + str(resolution_width))
 print('source resolution height:\t' + str(resolution_height))
 print('target resolution width:\t' + str(resolution_width*2))
@@ -92,15 +97,15 @@ filenamelist.sort()
 frame_size = resolution_width * resolution_height * 24 / 8
 
 for filename in filenamelist:
-    if filename.endswith(".bgr"):
+    if filename.endswith(".frame"):
         if ((os.path.getsize(folder + filename) > frame_size - 100) & (os.path.getsize(folder + filename) < frame_size + 100)):
 
             # extract framecounter
-            stream = os.popen('dd if=' + folder + filename + ' bs=1 count=1 skip=2 status=none | od -An -vtu1')
+            stream = os.popen('dd if=' + folder + filename + ' bs=1 count=1 status=none | od -An -vtu1')
             framecounter = int(stream.read().strip("\n"))
 
             # extract a/b frame
-            stream = os.popen('dd if=' + folder + filename + ' bs=1 count=1 status=none | od -An -vtu1')
+            stream = os.popen('dd if=' + folder + filename + ' bs=1 count=1  skip=2 status=none | od -An -vtu1')
             abframevalue = stream.read().strip("\n")
             abframe = ""
             if (int(abframevalue) == 85):
@@ -112,7 +117,7 @@ for filename in filenamelist:
             if (abframe == "A-Frame"):
 
                 # extract framecounter
-                stream = os.popen('dd if=' + folder + filenamelist[fileindex+1] + ' bs=1 count=1 skip=2 status=none | od -An -vtu1')
+                stream = os.popen('dd if=' + folder + filenamelist[fileindex+1] + ' bs=1 count=1 status=none | od -An -vtu1')
                 framecounternext = int(stream.read().strip("\n"))
 
                 #only continue if a B frame exists that contains a framecounter that is one value highe than the A-frame
@@ -121,8 +126,10 @@ for filename in filenamelist:
                           '\t-> ' + folder + clipname.strip('/') + f'_{frameindex:05}' + '.raw12')
 
                     # write raw12
-                    stream = os.popen('montage -size ' + str(resolution_width) + 'x' + str(resolution_height) + ' -depth 8 ' + folder + filenamelist[fileindex] + ' ' + folder + filenamelist[fileindex+1] +
-                                      ' -tile 2x1 -geometry +0+0 rgb:' + folder + clipname.strip('/') + f'_{frameindex:05}' + '.raw12')
+                    #stream = os.popen('montage -size ' + str(resolution_width) + 'x' + str(resolution_height) + ' -depth 8 ' + folder + filenamelist[fileindex] + ' ' + folder + filenamelist[fileindex+1] +
+                    #                  ' -tile 2x1 -geometry +0+0 rgb:' + folder + clipname.strip('/') + f'_{frameindex:05}' + '.raw12')
+                    stream = os.popen('rgb-merge ' + folder + filenamelist[fileindex] + ' ' + folder + filenamelist[fileindex+1] +
+                                      ' ' + folder + clipname.strip('/') + f'_{frameindex:05}' + '.raw12')
                     print(stream.read())
 
                     # write dng

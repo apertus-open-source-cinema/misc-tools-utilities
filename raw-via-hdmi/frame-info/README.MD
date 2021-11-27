@@ -1,12 +1,12 @@
 # Usage
 ```
-This is bgr-info V0.2
+This is frame-info V0.2
 
 SYNOPSIS
-	bgr-info.py [parameters]
+	frame-info.py [parameters]
 
 EXAMPLE
-	bgr-info.py -w 2048 -h 1080 -i myfolder/
+	frame-info.py -w 2048 -h 1080 -i myfolder/
 
 OPTIONS
 	-w, --width:	    defines image resolution width (default: 1920)
@@ -14,16 +14,19 @@ OPTIONS
 	-i, --input:	    path to files that should be read
 	-s, --skip-hash:	skip creating hash for every frame (significant speed up)
 ```
+# About
+frame-info analyses an extracted image sequence (*.frame) recorded with an AXIOM Beta via HDMI raw method.
+use -i parameter for input path.
 
 # Background
-bgr-info reports and exits if there are no corner markers detected in the first *.bgr in the sequence.
+frame-info reports and exits if there are no corner markers detected in the first *.frame in the sequence.
 Skipped and duplicate frames are reported at the end of the analysis.
 
 
 # Example Output
 ```
-folder: ../scripts/Clip_00001-magritte-bubbles/
-*.bgr files found in folder: 698
+folder: ../scripts/Clip_00001/
+*.frame files found in folder: 698
 
 ==========================================================
 filename 		 framecounter 	 A/B frame
