@@ -66,12 +66,12 @@ def update_recordings_list():
     directories = []
 
     for foldername in os.listdir(window['-inputfolder-'].get()):
-        if os.path.isdir(foldername):
+        #print (window['-inputfolder-'].get() + "/" + foldername)
+        if os.path.isdir(window['-inputfolder-'].get() + "/" + foldername):
+            #print(foldername)
             # Check if there is a folder with an #.rgb file inside
-            if glob.glob(foldername + '/*.rgb'):
-                # print(foldername)
-                # check size of *.rgb file to estimate number of frames in it
-
+            if glob.glob(window['-inputfolder-'].get() + "/" + foldername + '/*.rgb'):
+                #print(foldername)
                 directories.append(foldername)
     try:
         window['-recordings-'].update(values=directories)
@@ -92,14 +92,14 @@ def update_clip_info():
         foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[
             0]]
 
-        for filename in os.listdir(foldername):
+        for filename in os.listdir(window['-inputfolder-'].get() + "/" + foldername):
             if filename.endswith(".rgb"):
                 # How many frames are inside one big .rgb file
                 frames_rgb = int(os.path.getsize(
-                    foldername + '/' + filename) / 6220800)
+                    window['-inputfolder-'].get() + "/" + foldername + '/' + filename) / 6220800)
 
                 # How many extracted *.bgr files are in that folder already
-                p1 = subprocess.Popen('ls ' + foldername + '/*.bgr | wc -l', shell=True, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                p1 = subprocess.Popen('ls ' + window['-inputfolder-'].get() + "/" + foldername + '/*.bgr | wc -l', shell=True, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 out, err = p1.communicate() 
                 bgr_frame_files_count = int(out)
                 p1.stdout.close()
@@ -112,24 +112,24 @@ def update_clip_info():
                     window['-extract-'].Update(disabled=False)
 
                 # How many *.raw12 files are in that folder already
-                p1 = subprocess.Popen('ls ' + foldername + '/*.raw12 | wc -l', shell=True, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                p1 = subprocess.Popen('ls ' + window['-inputfolder-'].get() + "/" + foldername + '/*.raw12 | wc -l', shell=True, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 out, err = p1.communicate() 
                 raw12_frame_files_count = int(out)
                 p1.stdout.close()
 
                 # How many *.DNG files are in that folder already
-                p1 = subprocess.Popen('ls ' + foldername + '/*.DNG | wc -l', shell=True, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                p1 = subprocess.Popen('ls ' + window['-inputfolder-'].get() + "/" + foldername + '/*.DNG | wc -l', shell=True, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 out, err = p1.communicate() 
                 dng_frame_files_count = int(out)
                 p1.stdout.close()
 
                 # Preview video present?
-                p1 = subprocess.Popen('ls ' + foldername + '/*.mp4 | wc -l', shell=True, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                p1 = subprocess.Popen('ls ' + window['-inputfolder-'].get() + "/" + foldername + '/*.mp4 | wc -l', shell=True, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 out, err = p1.communicate() 
                 preview_video = int(out)
                 p1.stdout.close()
                 if preview_video:
-                    preview_video_string = foldername + '/' + foldername + '.mp4'
+                    preview_video_string = foldername + '.mp4'
                 else:
                     preview_video_string = 'none'
 
@@ -209,12 +209,12 @@ def setup():
     layout = [[sg.Text('AXIOM Beta HDMI Raw Recorder', font=("Helvetica", 25))],
               [sg.Text('AXIOM Beta IP: ')],
               [sg.Input(data['beta_ip'], key='-beta-ip-', enable_events=True), sg.Button('Test Connection', key='-test-ssh-connection-'),
-              sg.Button('Download Sensor Registers', key='-sensor-registers-')],
+              sg.Button('Init Raw Mode', key='-init-beta-raw-'), sg.Button('Download Sensor Registers', key='-sensor-registers-')],
               [sg.Button('View Stream', key=view_stream),
                record_button],
               [sg.Text('Recording Directory: ')],
               [sg.Input(data['inputfolder'], key='-inputfolder-', enable_events=True), sg.FolderBrowse(target='-inputfolder-', initial_folder=data['inputfolder'])],
-              [sg.Text('Recordings:'), sg.Button('Reload', key="Reload Recordings")],
+              [sg.Text('Recordings:'), sg.Button('Reload', key="-reload-recordings-")],
               [sg.Listbox(values=('Loading...', 'Listbox 2', 'Listbox 3'), size=(
                   50, 10), key='-recordings-', enable_events=True), sg.Text('Clipinfo:\n', key='-clipinfo-')],
               [sg.Text('Free Disk Space: ' + str(space) + "GiB")],
@@ -223,7 +223,8 @@ def setup():
                sg.Combo(['raw12', 'dng', 'raw12&dng'], default_value='raw12&dng', key='-conversion-target-'),
                sg.Button('Convert Frames', key='-convert-')],
               [sg.Button('Create Preview Video', key='-preview-'),
-               sg.Button('Play Preview Video', key='-playpreview-')],
+               sg.Button('Play Preview Video', key='-playpreview-'),
+               sg.Button('Show Preview', key='-show-preview-')],
               [sg.Button('Exit')]]
 
     global window
@@ -253,7 +254,7 @@ def main_loop():
             data['inputfolder'] = window['-inputfolder-'].get()
             update_recordings_list()
 
-        if event == 'Reload Recordings':
+        if event == '-reload-recordings-':
             update_recordings_list()
 
         if event == 'Update Clipinfo':
@@ -269,9 +270,14 @@ def main_loop():
             stream = os.popen('ping ' + window['-beta-ip-'].get() + ' -c 1')
             print(stream.read())
 
+        if event == '-init-beta-raw-':
+            print ('Connecting to camera and initiatng raw output mode: ' + window['-beta-ip-'].get())
+            stream = os.popen('ssh root@' + window['-beta-ip-'].get() + ' "axiom_start.sh raw"')
+            print(stream.read())
+
         if event == '-sensor-registers-':
             print ('Downloading Sensor Registers from: ' + window['-beta-ip-'].get())
-            stream = os.popen('sshpass -e ssh operator@' + window['-beta-ip-'].get() + ' "axiom_snap -e 10ms -r -z" > register_dump')
+            stream = os.popen('ssh root@' + window['-beta-ip-'].get() + ' "axiom_snap -e 10ms -r -z" > register_dump')
             print(stream.read())
 
         if event == '-extract-':
@@ -322,6 +328,10 @@ def main_loop():
             t = Thread(target=enqueue_output, args=(p.stdout, q))
             t.daemon = True  # thread dies with the program
             t.start()
+
+
+        if event == '-show-preview-':
+            print ("preview playback started")
 
         if event == '-playpreview-':
             foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[
