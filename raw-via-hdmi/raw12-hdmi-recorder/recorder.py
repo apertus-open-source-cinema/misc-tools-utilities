@@ -355,9 +355,9 @@ def main_loop():
 
         if event == '-show-preview-':
             foldername = window['-inputfolder-'].get() + '/' + window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[0]]
-            print ('cd ' + data['recorderfolder'] + ' ; cargo run --release  ! RawDirectoryReader --file-pattern ' + foldername + '/*.raw12' +
+            print ('cd ' + data['recorderfolder'] + " ; cargo run --release  ! RawDirectoryReader --file-pattern '" + foldername + "/*.raw12'" +
                        ' --bit-depth 12 --height 2160 --width 3840 --first-red-x true --first-red-y false --fps 30  ! GpuBitDepthConverter ! Debayer ! Display')
-            p = Popen(['cd ' + data['recorderfolder'] + ' ; cargo run --release  ! RawDirectoryReader --file-pattern ' + foldername + '/*.raw12' +
+            p = Popen(['cd ' + data['recorderfolder'] + " ; cargo run --release  ! RawDirectoryReader --file-pattern '" + foldername + "/*.raw12'" +
                        ' --bit-depth 12 --height 2160 --width 3840 --first-red-x true --first-red-y false --fps 30  ! GpuBitDepthConverter ! Debayer ! Display'],
                       shell=True, stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
             q = Queue()
