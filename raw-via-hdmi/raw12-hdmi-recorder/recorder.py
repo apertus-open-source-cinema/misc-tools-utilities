@@ -182,7 +182,7 @@ def start_recording():
 
     print('ffmpeg -i ' + video_device + ' -map 0 -pix_fmt rgb24 ' + folderdir + '/' + 'Clip_' + f'{clip_index:05d}' + '.rgb')
     global current_stream_process
-    current_stream_process = Popen('ffmpeg -i ' + video_device +
+    current_stream_process = Popen('exec ffmpeg -i ' + video_device +
                                    ' -map 0 -pix_fmt rgb24 ' + folderdir + '/' + 'Clip_' + f'{clip_index:05d}' + '.rgb', shell=True)
     print("Recording started")
 
@@ -191,6 +191,7 @@ def stop_recording():
     global current_stream_process
     if current_stream_process is not None:
         current_stream_process.kill()
+        current_stream_process.wait()
 
     # FIXME: the recording is not really stopped
 
@@ -202,9 +203,8 @@ def stop_recording():
 def setup():
     # Create the Window
     global record_button
-    #record_button = sg.Button('', key=handle_recording, button_color=sg.TRANSPARENT_BUTTON,
-    #                          image_filename="images/record_button.png", size=(120, 60), border_width=0)
-    record_button = sg.Button('Record', key=handle_recording)
+    record_button = sg.Button('', key=handle_recording, button_color=sg.TRANSPARENT_BUTTON,
+                             image_filename="images/record_button.png", size=(120, 60), border_width=0)
 
     sg.theme('Reddit')
 
@@ -224,9 +224,7 @@ def setup():
               [sg.Text('Convert to:'),
                sg.Combo(['raw12', 'dng', 'raw12&dng'], default_value='raw12&dng', key='-conversion-target-'),
                sg.Button('Convert Frames', key='-convert-')],
-              [sg.Button('Create Preview Video', key='-preview-'),
-               sg.Button('Play Preview Video', key='-playpreview-'),
-               sg.Button('Show Preview', key='-show-preview-')],
+              [sg.Button('Show Preview', key='-show-preview-')],
               [sg.Button('Exit')]]
 
     global window
@@ -319,45 +317,27 @@ def main_loop():
 
             update_clip_info()
 
-        if event == '-preview-':
-            foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[
-                0]]
-
-            p = Popen(['dcraw -T -h ' + foldername + '/*.DNG && ffmpeg -r 30 -i ' + foldername + '/' +
-                       foldername + '_%05d.tiff -c:v libx264 -vf fps=30 ' + foldername + '/' + foldername + '.mp4 && rm ' + foldername + '/*.tiff'],
-                      shell=True, stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
-            q = Queue()
-            t = Thread(target=enqueue_output, args=(p.stdout, q))
-            t.daemon = True  # thread dies with the program
-            t.start()
+        #if event == '-preview-':
+        #   foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[
+        #       0]]
+#
+ #           p = Popen(['dcraw -T -h ' + foldername + '/*.DNG && ffmpeg -r 30 -i ' + foldername + '/' +
+ #                      foldername + '_%05d.tiff -c:v libx264 -vf fps=30 ' + foldername + '/' + foldername + '.mp4 && rm ' + foldername + '/*.tiff'],
+ #                     shell=True, stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
+ #           q = Queue()
+ #           t = Thread(target=enqueue_output, args=(p.stdout, q))
+ #           t.daemon = True  # thread dies with the program
+ #           t.start()
 
 
         if event == '-show-preview-':
             print ("preview playback started")
 
-        if event == '-playpreview-':
-            foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[
-                0]]
-            stream = os.popen('ffplay ' + foldername + '/' + foldername + '.mp4 -vf scale=960:-1')
-            output = stream.read()
-
-        # if event == 'Start Recording':
-        #     folderdir = "Clip_" + f'{clip_index:05d}'
-        #     while 1:
-        #         if not os.path.exists(folderdir):
-        #             os.mkdir(folderdir)
-        #             print("Directory ", folderdir, " Created ")
-        #             break
-        #         else:
-        #             print("Directory ", folderdir, " already exists")
-        #             clip_index += 1
-        #             folderdir = "Clip_" + f'{clip_index:05d}'
-        #
-        #     print('ffmpeg -i ' + video_device + ' -map 0 ' +
-        #           folderdir + '/' + folderdir + '.rgb')
-        #     stream = os.popen('ffmpeg -i ' + video_device +
-        #                       ' -map 0 ' + folderdir + '/' + folderdir + '.rgb')
-        #     output = stream.read()
+#        if event == '-playpreview-':
+#            foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[
+#                0]]
+#            stream = os.popen('ffplay ' + foldername + '/' + foldername + '.mp4 -vf scale=960:-1')
+#            output = stream.read()
 
 
 def main(argv):
