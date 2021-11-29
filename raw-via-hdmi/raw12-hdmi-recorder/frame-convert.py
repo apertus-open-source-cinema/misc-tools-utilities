@@ -128,7 +128,7 @@ for filename in filenamelist:
                     # write raw12
                     #stream = os.popen('montage -size ' + str(resolution_width) + 'x' + str(resolution_height) + ' -depth 8 ' + folder + filenamelist[fileindex] + ' ' + folder + filenamelist[fileindex+1] +
                     #                  ' -tile 2x1 -geometry +0+0 rgb:' + folder + clipname.strip('/') + f'_{frameindex:05}' + '.raw12')
-                    stream = os.popen('rgb-merge ' + folder + filenamelist[fileindex] + ' ' + folder + filenamelist[fileindex+1] +
+                    stream = os.popen('frame-merge ' + folder + filenamelist[fileindex] + ' ' + folder + filenamelist[fileindex+1] +
                                       ' ' + folder + clipname.strip('/') + f'_{frameindex:05}' + '.raw12')
                     print(stream.read())
 
