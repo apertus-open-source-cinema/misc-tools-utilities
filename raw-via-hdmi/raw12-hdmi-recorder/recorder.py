@@ -22,6 +22,9 @@ ON_POSIX = 'posix' in sys.builtin_module_names
 # config data
 data = {}
 
+# clip analysis data
+analysis = {}
+
 video_device = "/dev/video0"
 total, used, free = shutil.disk_usage(os.getcwd())
 space = free // (2 ** 30)
@@ -98,17 +101,30 @@ def update_clip_info():
     window['-clipinfo-'].update('Clipinfo:')
 
     if window['-recordings-'].Widget.curselection():
-        foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[
-            0]]
+        foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[0]]
+        if os.path.exists(window['-inputfolder-'].get() + '/' + foldername + "/analysis.json"):
+            f = open(window['-inputfolder-'].get() + '/' + foldername + '/analysis.json')
+            analysis = json.load(f)
+        else:
+            foldername = window['-inputfolder-'].get() + '/' + window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[0]]
+            command = 'cd ../frame-info/ ; python3 frame-info.py -r -i ' + foldername + '/ > ' + foldername + '/analysis.json'
+            print (command)
+            p = Popen([command], shell=True, stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
+            q = Queue()
+            t = Thread(target=enqueue_output, args=(p.stdout, q))
+            t.daemon = True  # thread dies with the program
+            t.start()
+            print("analysis.json written")
 
+        foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[0]]
         for filename in os.listdir(window['-inputfolder-'].get() + "/" + foldername):
             if filename.endswith(".rgb"):
+                #TODO check if there is more than 1 *.rgb file in that folder: throw warning
 
                 # How many frames are inside one big .rgb file
-                frames_rgb = int(os.path.getsize(
-                    window['-inputfolder-'].get() + "/" + foldername + '/' + foldername + '.rgb') / 6220800)
+                frames_rgb = int(os.path.getsize(window['-inputfolder-'].get() + "/" + foldername + '/' + filename) / 6220800)
 
-                # How many extracted *.bgr files are in that folder already
+                # How many extracted *.frame files are in that folder already
                 p1 = subprocess.Popen('ls ' + window['-inputfolder-'].get() + "/" + foldername +
                                       '/*.frame | wc -l', shell=True, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 out, err = p1.communicate()
@@ -147,12 +163,10 @@ def update_clip_info():
                     preview_video_string = 'none'
 
                 # Read and display information about a specific clip
-                window['-clipinfo-'].update('Clip: ' + filename + '\ncontains A/B-Frames: ' + str(
-                    frames_rgb) + '\nA/B frames (rgb) extracted: ' + str(
-                    bgr_frame_files_count) + '\nraw12 converted: ' +
-                    str(raw12_frame_files_count) + '\nDNG converted: ' + str(
-                    dng_frame_files_count) +
-                    '\nPreview Video: ' + preview_video_string)
+                if 'analysis' in locals():
+                    window['-clipinfo-'].update('Clip: ' + filename + '\ncontains A/B-Frames: ' + str(frames_rgb) + '\nA/B frames (rgb) extracted: ' + 
+                        str(bgr_frame_files_count) + '\nraw12 converted: ' + str(raw12_frame_files_count) + '\nDNG converted: ' + 
+                        str(dng_frame_files_count) + '\nSkipped Frames: ' + analysis['skippedFrames'] + '\nDuplicate Frames: ' + analysis['duplicateFrames'])
 
 
 def get_rgb_file():
@@ -222,26 +236,20 @@ def setup():
     sg.theme('Reddit')
 
     layout = [[sg.Text('AXIOM Beta HDMI Raw Recorder', font=("Helvetica", 25))],
-              [sg.Text('AXIOM Beta IP: ')],
-              [sg.Input(data['beta_ip'], key='-beta-ip-', enable_events=True), sg.Button('Test Connection', key='-test-ssh-connection-'),
+              [sg.Text('AXIOM Beta IP: '), sg.Input(data['beta_ip'], key='-beta-ip-', size=(16, 10), enable_events=True), sg.Button('Test Connection', key='-test-ssh-connection-'),
               sg.Button('Init Raw Mode', key='-init-beta-raw-'), sg.Button('Download Sensor Registers', key='-sensor-registers-')],
               [sg.Button('View Stream', key=view_stream), record_button],
-              [sg.Text('Recording Directory: ')],
-              [sg.Input(data['inputfolder'], key='-inputfolder-', enable_events=True),
+              [sg.Text('Recording Directory: '), sg.Input(data['inputfolder'], key='-inputfolder-', enable_events=True),
                sg.FolderBrowse(target='-inputfolder-', initial_folder=data['inputfolder'])],
               [sg.Text('Recordings:'), sg.Button('Reload', key="-reload-recordings-")],
               [sg.Listbox(values=('Loading...', 'Listbox 2', 'Listbox 3'), size=(
-                  50, 10), key='-recordings-', enable_events=True), sg.Text('Clipinfo:\n', key='-clipinfo-')],
-              [sg.Text('Free Disk Space: ' + str(space) + "GiB")],
-              [sg.Button('Update Clipinfo'), sg.Button('Extract Frames', key='-extract-')],
-              [sg.Text('Convert to:'), sg.Combo(['raw12', 'dng', 'raw12&dng'],
+                  30, 5), key='-recordings-', enable_events=True), sg.Text('Clipinfo:\n', key='-clipinfo-')],
+              [sg.Text('Free Disk Space: ' + str(space) + "GiB"), sg.Button('Update Clipinfo'), sg.Button('Extract Frames', key='-extract-'),
+              sg.Text('Convert to:'), sg.Combo(['raw12', 'dng', 'raw12&dng'],
                         default_value='raw12&dng', key='-conversion-target-'),
                sg.Button('Convert Frames', key='-convert-')],
-              [sg.Text('Recorder Directory: ')],
-              [sg.Input(data['recorderfolder'], key='-recorderfolder-', enable_events=True),
-               sg.FolderBrowse(target='-recorderfolder-', initial_folder=data['recorderfolder'])],
-              [sg.Button('Show Preview', key='-show-preview-')],
-              [sg.Button('Exit')]]
+              [sg.Text('Recorder Directory: '), sg.Input(data['recorderfolder'], key='-recorderfolder-', size=(35,10), enable_events=True),
+               sg.FolderBrowse(target='-recorderfolder-', initial_folder=data['recorderfolder']), sg.Button('Show Preview', key='-show-preview-')]]
 
     global window
     window = sg.Window('AXIOM Recorder', layout, resizable=True, finalize=True)
@@ -365,12 +373,7 @@ def main_loop():
             t.daemon = True  # thread dies with the program
             t.start()
             print("preview playback started")
-
-#        if event == '-playpreview-':
-#            foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[
-#                0]]
-#            stream = os.popen('ffplay ' + foldername + '/' + foldername + '.mp4 -vf scale=960:-1')
-#            output = stream.read()
+            
 
 
 def main(argv):
