@@ -32,6 +32,7 @@ clip_index = 0
 q = False
 window = None
 current_stream_process = None
+last_recorded_clip = ""
 
 # load configs from last session
 
@@ -194,7 +195,7 @@ def handle_recording():
 
 
 def start_recording():
-    global clip_index
+    global clip_index, last_recorded_clip
     folderdir = window['-inputfolder-'].get() + "/Clip_" + f'{clip_index:05d}'
     while 1:
         if not os.path.exists(folderdir):
@@ -212,19 +213,26 @@ def start_recording():
     current_stream_process = Popen('exec ffmpeg -i ' + video_device +
                                    ' -map 0 -pix_fmt rgb24 ' + folderdir + '/' + 'Clip_' + f'{clip_index:05d}' + '.rgb', shell=True)
     print("Recording started")
+    last_recorded_clip = folderdir + '/' + 'Clip_' + f'{clip_index:05d}' + '.rgb'
 
 
 def stop_recording():
-    global current_stream_process
+    global current_stream_process, last_recorded_clip
     if current_stream_process is not None:
         current_stream_process.kill()
         current_stream_process.wait()
 
-    # FIXME: the recording is not really stopped
-
     print("Recording stopped")
     current_stream_process = None
+
+    print('Downloading Sensor Registers from: ' + window['-beta-ip-'].get())
+    write_sensor_registers(window['-beta-ip-'].get(), last_recorded_clip + ".registers")
     update_recordings_list()
+
+
+def write_sensor_registers(BetaIP, filepath):
+    stream = os.popen('ssh root@' + BetaIP + ' "axiom_snap -E -r -z" > ' + filepath)
+    print(stream.read())
 
 
 def setup():
@@ -302,13 +310,6 @@ def main_loop():
                   window['-beta-ip-'].get())
             stream = os.popen('ssh root@' + window['-beta-ip-'].get(
             ) + ' "axiom_start.sh raw ; axiom_scn_reg 30 0x7000 ; axiom_raw_mark.sh ; axiom_scn_reg 2 0x100"')
-            print(stream.read())
-
-        if event == '-sensor-registers-':
-            print('Downloading Sensor Registers from: ' +
-                  window['-beta-ip-'].get())
-            stream = os.popen(
-                'ssh root@' + window['-beta-ip-'].get() + ' "axiom_snap -e 10ms -r -z" > register_dump')
             print(stream.read())
 
         if event == '-extract-':
