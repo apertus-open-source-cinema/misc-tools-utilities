@@ -6,7 +6,7 @@ SYNOPSIS
 	frame-info.py [parameters]
 
 EXAMPLE
-	frame-info.py -w 2048 -h 1080 -i myfolder/
+	python3 frame-info.py -w 2048 -h 1080 -i myfolder/
 
 OPTIONS
 	-w, --width:	    defines image resolution width (default: 1920)

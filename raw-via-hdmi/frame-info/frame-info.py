@@ -11,28 +11,30 @@ version = 'V0.2'
 resolution_width = 1920
 resolution_height = 1080
 skipHash = False
+jsonReport = False
 
 def print_help():
-    print('This is bgr-info ' + version)
+    print('This is frame-info ' + version)
     print('')
     print('SYNOPSIS')
-    print('\trgb-info.py [parameters]')
+    print('\tframe-info.py [parameters]')
     print('')
     print('EXAMPLE')
-    print('\trgb-info.py -w 2048 -h 1080 -i myfolder/')
+    print('\tframe-info.py -w 2048 -h 1080 -i myfolder/')
     print('')
     print('OPTIONS')
     print('\t-w, --width:\t defines image resolution width (default: 1920)')
     print('\t-h, --height:\t defines image resolution height (default: 1080)')
     print('\t-i, --input:\t path to files that should be read')
     print('\t-s, --skip-hash:\t skip creating hash for every frame (significant speed up)')
+    print('\t-r, --report:\t create json report, pipe to stdout')
 
 
 def main(argv):
-    global folder, resolution_height, resolution_width, skipHash
+    global folder, resolution_height, resolution_width, skipHash, jsonReport
 
     try:
-        opts, args = getopt.getopt(argv, "sh:w:h:i:", ["help", "width=", "height=", "input=", "skip-hash"])
+        opts, args = getopt.getopt(argv, "srh:w:h:i:", ["help", "width=", "height=", "input=", "skip-hash", "skip-hash"])
     except getopt.GetoptError:
         print_help()
         sys.exit(2)
@@ -47,6 +49,8 @@ def main(argv):
         elif opt in ("-h", "--height"):
             resolution_height = int(arg.strip())
             print('Parameter provided: Using resolution height: ' + str(resolution_height))
+        elif opt in ("-r", "--report"):
+            jsonReport = True
         elif opt in ("-s", "--skip-hash"):
             skipHash = True
             print('Parameter provided: skipping hash creation')
@@ -58,14 +62,16 @@ def main(argv):
 if __name__ == "__main__":
     main(sys.argv[1:])
 
-stream = os.popen('ls ' + folder + '/*.bgr | wc -l')
+stream = os.popen('ls ' + folder + '/*.frame | wc -l')
 filescount = stream.read()
-print('folder: ' + folder)
-print('*.rgb files found in folder: ' + filescount)
 
-print("==========================================================")
-print("filename \t\t framecounter \t A/B frame")
-print("==========================================================")
+if not jsonReport:
+    print('folder: ' + folder)
+    print('*.frame files found in folder: ' + filescount)
+
+    print("==========================================================")
+    print("filename \t\t framecounter \t A/B frame")
+    print("==========================================================")
 
 filenamelist = os.listdir(folder + "/.")
 filenamelist.sort()
@@ -75,9 +81,10 @@ first = True
 skippedFrames = 0
 duplicateFrames = 0
 filesize = resolution_width * resolution_height * 3
+totalFrames = 0
 
 for filename in filenamelist:
-    if filename.endswith(".bgr"):
+    if filename.endswith(".frame"):
         if ((os.path.getsize(folder + "/" + filename) > filesize - 100) & (os.path.getsize(folder + "/" + filename) < filesize + 100)):
 
             # check if corner markers are present and matching (A or B Frame indicator) on first image or throw error & exit
@@ -103,13 +110,11 @@ for filename in filenamelist:
             #        sys.exit()
 
             # extract framecounter
-            stream = os.popen('dd if=' + folder + "/" + filename +
-                              ' bs=1 count=1 status=none | od -An -vtu1')
+            stream = os.popen('dd if=' + folder + "/" + filename + ' bs=1 count=1 status=none | od -An -vtu1')
             framecounter = int(stream.read().strip("\n"))
 
             # extract a/b frame
-            stream = os.popen('dd if=' + folder + "/" + filename +
-                              ' bs=1 count=1 skip=2 status=none | od -An -vtu1')
+            stream = os.popen('dd if=' + folder + "/" + filename + ' bs=1 count=1 skip=2 status=none | od -An -vtu1')
             abframevalue = stream.read().strip("\n")
             abframe = ""
             if (int(abframevalue) == 85):
@@ -118,7 +123,7 @@ for filename in filenamelist:
                 abframe = "B-Frame"
 
             # generate md5 hash
-            if(not skipHash):
+            if(not skipHash or jsonReport):
                 stream = os.popen('md5sum ' + folder + "/" + filename)
                 md5 = stream.read()
                 md5 = md5.split()[0]
@@ -126,14 +131,18 @@ for filename in filenamelist:
                 md5 = ""
 
             # output table
+
             # don't report missmatch on 8 bit overflow
             if ((previousframecounter+1 == framecounter) | ((previousframecounter == 255) & (framecounter == 0))):
-                print(filename + "\t\t" + str(framecounter) +
-                      "\t\t" + abframe + "\t\t" + md5)
+                if not jsonReport:
+                    print(filename + "\t\t" + str(framecounter) + "\t\t" + abframe + "\t\t" + md5)
+
+                    
             else:
                 if (first):  # don't report missmatch on first frame
-                    print(filename + "\t\t" +
-                          str(framecounter) + "\t\t" + abframe + "\t\t" + md5)
+                    if not jsonReport:
+                        print(filename + "\t\t" + str(framecounter) + "\t\t" + abframe + "\t\t" + md5)
+
                     first = False
                 else:
                     # skipped frame(s)
@@ -144,15 +153,19 @@ for filename in filenamelist:
                     if (previousframecounter == framecounter):
                         duplicateFrames += 1
 
-                    print("\033[91m" + filename + "\t\t" + str(framecounter) +
-                        "\t\t" + abframe + "\t\t" + md5 + "\t\t framecounter missmatch\033[0m")
+                    if not jsonReport:
+                        print("\033[91m" + filename + "\t\t" + str(framecounter) + "\t\t" + abframe + "\t\t" + md5 + "\t\t framecounter missmatch\033[0m")
 
             previousframecounter = framecounter
+            totalFrames += 1
     else:
         continue
 
+if not jsonReport:
+    print("==========================================================")
+    print("Skipped Frames: " + str(skippedFrames))
+    print("Duplicate Frames: " + str(duplicateFrames))
+    print("==========================================================")
+else:
+    print('{"clipfolder": "' + folder + '", "frames": "' + str(totalFrames) + '", "skippedFrames": "' + str(skippedFrames) + '", "duplicateFrames": "'+str(duplicateFrames)+'"}')
 
-print("==========================================================")
-print("Skipped Frames: " + str(skippedFrames))
-print("Duplicate Frames: " + str(duplicateFrames))
-print("==========================================================")
