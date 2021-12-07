@@ -409,9 +409,9 @@ def main_loop():
             foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[
                 0]]
             print('converting selected clip: ' + get_rgb_file())
-            # print('python3 bgr-convert.py -i ' + foldername + '/ -t ' + target)
-
-            p = Popen(['python3 ' + os.path.dirname(os.path.realpath(__file__)) + '/frame-convert.py -i ' + window['-inputfolder-'].get() + '/' + foldername + '/ -t ' + target], shell=True, stdout=PIPE,
+            command = 'python3 ' + os.path.dirname(os.path.realpath(__file__)) + '/frame-convert.py -i ' + window['-inputfolder-'].get() + '/' + foldername + '/ -t ' + target
+            print(command)
+            p = Popen([command], shell=True, stdout=PIPE,
                       bufsize=1,
                       close_fds=ON_POSIX)
             q = Queue()
