@@ -125,7 +125,7 @@ def update_next_image_buttons():
     window['-next-image-'].Update(disabled=False)
     
     # extract indexes with image name match
-    index = [i for i, s in enumerate(list_of_files) if current_image_name in s][0]
+    index = [i for i, s in enumerate(list_of_files) if os.path.abspath(current_image_name) in s][0]
 
     # if this is the first image in directory
     if index == 0:
@@ -145,7 +145,7 @@ def load_image_from_dir(targetindex):
     list_of_files = sorted(filter(os.path.isfile, glob.glob(subfolder +  '/*.raw12')))
 
     # extract indexes with image name match
-    index = [i for i, s in enumerate(list_of_files) if current_image_name in s][0]
+    index = [i for i, s in enumerate(list_of_files) if os.path.abspath(current_image_name) in s][0]
 
     # First image
     if ((index == 0) & (targetindex < 0)):
