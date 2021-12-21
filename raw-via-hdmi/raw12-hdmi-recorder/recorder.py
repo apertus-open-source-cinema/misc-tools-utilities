@@ -33,6 +33,16 @@ q = False
 window = None
 current_stream_process = None
 last_recorded_clip = ""
+gain_options = [1, 2, 3, 4]
+gain_index = 0
+shutter_options = ["1/696", "1/384", "1/192", "1/96","1/48", "1/32"]
+shutter_values = [1.4, 2.6, 5.2, 10.41, 20.833, 31.25]
+shutter_index = 5
+hdr_slopes = 1
+hdr_exp1 = 0
+hdr_exp2 = 0
+hdr_vtl2 = 0
+hdr_vtl3 = 0
 
 # load configs from last session
 
@@ -182,6 +192,65 @@ def view_stream():
     stream.read()
 
 
+def shutter_inc():
+    global shutter_index, shutter_options, data, shutter_values
+    shutter_index += 1 
+    if shutter_index > 5:
+        shutter_index = 5
+    window['-shutter-'].update('Shutter: ' + str(shutter_options[shutter_index]))
+    stream = os.popen('ssh root@' + data['beta_ip'] + ' "axiom_snap -e '+ str(shutter_values[shutter_index]) + 'ms -z"')
+    print(stream.read())
+
+
+def shutter_dec():
+    global shutter_index, shutter_options, data, shutter_values
+    shutter_index -= 1 
+    if shutter_index < 0:
+        shutter_index = 0
+    window['-shutter-'].update('Shutter: ' + str(shutter_options[shutter_index]))
+    stream = os.popen('ssh root@' + data['beta_ip'] + ' "axiom_snap -e '+ str(shutter_values[shutter_index]) + 'ms -z"')
+    print(stream.read())
+
+
+def gain_inc():
+    global gain_index, gain_options, data
+    gain_index +=1 
+    if gain_index > 3:
+        gain_index = 3
+    window['-gain-'].update('Gain: ' + str(gain_options[gain_index]))
+    stream = os.popen('ssh root@' + data['beta_ip'] + ' "axiom_set_gain.sh ' + str(gain_options[gain_index]) + '"')
+    print(stream.read())
+
+
+def gain_dec():
+    global gain_index, gain_options, data
+    gain_index -=1 
+    if gain_index < 0:
+        gain_index = 0
+    window['-gain-'].update('Gain: ' + str(gain_options[gain_index]))
+    stream = os.popen('ssh root@' + data['beta_ip'] + ' "axiom_set_gain.sh ' + str(gain_options[gain_index]) + '"')
+    print(stream.read())
+
+
+def hdr_slopes_dec():
+    global hdr_slopes
+    hdr_slopes -= 1
+    if hdr_slopes < 1:
+        hdr_slopes = 1
+    window['-hdr-slopes-'].update('HDR Slopes: ' + str(hdr_slopes))
+    stream = os.popen('ssh root@' + data['beta_ip'] + ' "axiom_cmv_reg 79 ' + str(hdr_slopes) + '"')
+    print(stream.read())
+
+def hdr_slopes_inc():
+    global hdr_slopes
+    hdr_slopes += 1
+    if hdr_slopes > 3:
+        hdr_slopes = 3
+    window['-hdr-slopes-'].update('HDR Slopes: ' + str(hdr_slopes))
+    stream = os.popen('ssh root@' + data['beta_ip'] + ' "axiom_cmv_reg 79 ' + str(hdr_slopes) + '"')
+    print(stream.read())
+
+
 record_button = None
 
 
@@ -243,10 +312,12 @@ def setup():
 
     sg.theme('Reddit')
 
-    layout = [[sg.Text('AXIOM Beta HDMI Raw Recorder', font=("Helvetica", 25))],
-              [sg.Text('AXIOM Beta IP: '), sg.Input(data['beta_ip'], key='-beta-ip-', size=(16, 10), enable_events=True), sg.Button('Test Connection', key='-test-ssh-connection-'),
+    layout = [[sg.Text('AXIOM Beta IP: '), sg.Input(data['beta_ip'], key='-beta-ip-', size=(16, 10), enable_events=True), sg.Button('Test Connection', key='-test-ssh-connection-'),
               sg.Button('Init Raw Mode', key='-init-beta-raw-'), sg.Button('Download Sensor Registers', key='-sensor-registers-')],
-              [sg.Button('View Stream', key=view_stream), record_button],
+              [sg.Button('-', key=gain_dec), sg.Text('Gain: 1', key='-gain-'), sg.Button('+', key=gain_inc), 
+              sg.Button('-', key=shutter_dec), sg.Text('Shutter: 1/32', key='-shutter-'), sg.Button('+', key=shutter_inc),
+              sg.Button('-', key=hdr_slopes_dec), sg.Text('HDR Slopes: 1', key='-hdr-slopes-'), sg.Button('+', key=hdr_slopes_inc),
+              sg.Button('View Stream', key=view_stream), record_button],
               [sg.Text('Recording Directory: '), sg.Input(data['inputfolder'], key='-inputfolder-', enable_events=True),
                sg.FolderBrowse(target='-inputfolder-', initial_folder=data['inputfolder'])],
               [sg.Text('Recordings:'), sg.Button('Reload', key="-reload-recordings-")],
@@ -338,9 +409,9 @@ def main_loop():
             foldername = window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[
                 0]]
             print('converting selected clip: ' + get_rgb_file())
-            # print('python3 bgr-convert.py -i ' + foldername + '/ -t ' + target)
-
-            p = Popen(['python3 ' + os.path.dirname(os.path.realpath(__file__)) + '/frame-convert.py -i ' + window['-inputfolder-'].get() + '/' + foldername + '/ -t ' + target], shell=True, stdout=PIPE,
+            command = 'python3 ' + os.path.dirname(os.path.realpath(__file__)) + '/frame-convert.py -i ' + window['-inputfolder-'].get() + '/' + foldername + '/ -t ' + target
+            print(command)
+            p = Popen([command], shell=True, stdout=PIPE,
                       bufsize=1,
                       close_fds=ON_POSIX)
             q = Queue()
