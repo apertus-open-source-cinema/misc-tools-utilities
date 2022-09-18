@@ -9,7 +9,7 @@ import glob
 import io
 import os
 import time
-from enum import Enum
+from pathlib import Path
 
 import PySimpleGUI as sg
 import cv2
@@ -27,6 +27,11 @@ window: Window = None
 color_image = None
 mono_image = None
 current_image = None
+
+image_dir = ""
+raw12_file_list = []
+file_list_length = 0
+current_image_index = 0
 
 display_buffer = io.BytesIO()
 
@@ -109,7 +114,7 @@ def setup_images(image_path):
 
 
 def scale_image_data(factor):
-    global display_mode, color_image_data, mono_image_data, display_buffer
+    global display_buffer
 
     image = current_image.copy()
     if factor > 1:
@@ -143,61 +148,23 @@ def setup_window():
 
 
 def update_next_image_buttons():
-    # Get list of all files in the same directory sorted by name
-    subfolder = os.path.dirname(os.path.abspath(current_image_name))
-    list_of_files = sorted(filter(os.path.isfile, glob.glob(subfolder + '/*.raw12')))
+    global file_list_length, current_image_index
 
     window['-previous-image-'].Update(disabled=False)
     window['-next-image-'].Update(disabled=False)
 
-    # extract indexes with image name match
-    index = [i for i, s in enumerate(list_of_files) if os.path.abspath(current_image_name) in s][0]
-
     # if this is the first image in directory
-    if index == 0:
+    if current_image_index == 0:
         window['-previous-image-'].Update(disabled=True)
 
     # if this is the last image in the directory
-    if len(list_of_files) == index + 1:
+    if file_list_length == current_image_index + 1:
         window['-next-image-'].Update(disabled=True)
 
 
-def load_image_from_dir(targetindex):
-    global current_image_name
-
-    # Get list of all files in the same directory sorted by name
-    subfolder = os.path.dirname(os.path.abspath(current_image_name))
-    list_of_files = sorted(filter(os.path.isfile, glob.glob(subfolder + '/*.raw12')))
-
-    # extract indexes with image name match
-    index = [i for i, s in enumerate(list_of_files) if os.path.abspath(current_image_name) in s][0]
-
-    # First image
-    if (index == 0) & (targetindex < 0):
-        return
-
-    # Last image
-    if (len(list_of_files) == index + 1) & (targetindex > 0):
-        return
-
-    next_image = list_of_files[index + targetindex]
-    print('Switching to image: ' + next_image)
-
-    # Update window title
-    window.set_title('raw12 Viewer: ' + next_image)
-
-    setup_images(next_image)
-
-    current_image_name = next_image
-
-    if window['-display-mode-color-'].get():
-        show_images()
-
-    update_next_image_buttons()
-
-
 def main_loop():
-    global window, current_image_name, color_image, color_image_data, color_data, decimation_factor, current_image_data, display_mode, current_image
+    global window, color_image, decimation_factor, current_image, current_image_index, raw12_file_list, image_dir, \
+        file_list_length
 
     while True:
         event, values = window.read()
@@ -206,10 +173,24 @@ def main_loop():
             break
 
         elif event == 'Right:114' or event == '-next-image-':
-            load_image_from_dir(1)
+            current_image_index += 1
+            if current_image_index == file_list_length - 1:
+                current_image_index = current_image_index
+            file_name = raw12_file_list[current_image_index]
+            window.set_title('raw12 Viewer: ' + file_name)
+            update_next_image_buttons()
+            load_image(Path(image_dir, file_name))
+            show_images()
+            pass
 
         elif event == 'Left:113' or event == '-previous-image-':
-            load_image_from_dir(-1)
+            current_image_index -= 1
+            if current_image_index == 0:
+                current_image_index = 0
+            load_image(Path(image_dir, raw12_file_list[current_image_index]))
+            update_next_image_buttons()
+            show_images()
+            pass
 
         elif event == '-display-mode-mono-':
             print('mono mode activated')
@@ -257,7 +238,11 @@ def handle_image_dragging(event, values):
 
 
 def show_images():
-    global display_mode, display_buffer, decimation_factor
+    global display_buffer, decimation_factor, current_image
+    current_image = mono_image
+    if window['-display-mode-color-'].get():
+        current_image = color_image
+
     image = scale_image_data(decimation_factor)
     convert_to_image_data(image)
     graph.erase()
@@ -285,12 +270,48 @@ def start_dragging(event, values):
     old_position = values
 
 
+def enumerate_image_files(dir_path):
+    file_list = glob.glob('*.raw12', root_dir=dir_path)
+    return sorted(file_list)
+
+
+def load_image(path):
+    global RAW_WIDTH, RAW_HEIGHT, color_image, color_image_data, mono_image_data, color_image, mono_image
+
+    with open(path, "rb") as f:
+
+        file_size = os.path.getsize(path)
+        if file_size in SIZE_RESOLUTION_MAP:
+            RAW_WIDTH, RAW_HEIGHT = SIZE_RESOLUTION_MAP.get(file_size)
+        else:
+            print("Image size is not compliant")
+            exit(1)
+
+        raw_data = np.fromfile(f, dtype=np.uint8)
+        image_data = read_uint8(raw_data, path)
+        image_data = np.reshape(image_data, (RAW_HEIGHT, RAW_WIDTH))
+
+    # Create monochrome image
+    mono_image = Image.frombytes('L', (RAW_WIDTH, RAW_HEIGHT), image_data)
+
+    # Debayer data and create color image
+    color_data = cv2.cvtColor(image_data, cv2.COLOR_BAYER_GR2RGB_EA)
+    color_image = Image.frombytes('RGB', (RAW_WIDTH, RAW_HEIGHT), color_data)
+
+
 def main():
-    global current_image_name, current_image_data, current_image, color_image, decimation_factor
+    global current_image, color_image, decimation_factor, image_dir, \
+        raw12_file_list, current_image_index, file_list_length
     start_time = current_milli_time()
 
-    current_image_name = args.raw_file
-    setup_images(current_image_name)
+    requested_path = Path(args.raw_file)
+    image_dir = os.path.dirname(requested_path)
+    image_file_name = requested_path.name
+    raw12_file_list = enumerate_image_files(image_dir)
+    file_list_length = len(raw12_file_list)
+    current_image_index = raw12_file_list.index(image_file_name)
+
+    load_image(Path(image_dir, raw12_file_list[current_image_index]))
     current_image = color_image
     image = scale_image_data(decimation_factor)
     convert_to_image_data(image)
