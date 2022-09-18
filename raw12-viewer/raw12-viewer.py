@@ -5,7 +5,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 import argparse
-import glob
 import io
 import os
 import time
@@ -251,7 +250,14 @@ def show_images():
     graph.draw_image(data=display_buffer.getvalue(), location=(0, RAW_HEIGHT))
 
     # Limit dragging to the image size, if bigger than display area, otherwise display area is used
-    graph.tk_canvas.configure(scrollregion=graph.tk_canvas.bbox("all"))
+    bounding_box = graph.tk_canvas.bbox("all")
+    graph.tk_canvas.configure(scrollregion=bounding_box)
+
+    # Center image
+    x_center = int(bounding_box[2] / 2)
+    y_center = int(bounding_box[3] / 2)
+    graph.tk_canvas.xview_scroll(x_center, "units")
+    graph.tk_canvas.yview_scroll(y_center, "units")
 
 
 def move_image(values):
@@ -276,12 +282,12 @@ def start_dragging(event, values):
 
 
 def enumerate_image_files(dir_path):
-    file_list = glob.glob('*.raw12', root_dir=dir_path)
+    file_list = [fn for fn in os.listdir(dir_path) if fn.endswith('.raw12')]
     return sorted(file_list)
 
 
 def load_image(path):
-    global RAW_WIDTH, RAW_HEIGHT, color_image, color_image_data, mono_image_data, color_image, mono_image
+    global RAW_WIDTH, RAW_HEIGHT, color_image, color_image, mono_image
 
     with open(path, "rb") as f:
 
