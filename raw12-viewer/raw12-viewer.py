@@ -187,8 +187,10 @@ def main_loop():
             current_image_index -= 1
             if current_image_index == 0:
                 current_image_index = 0
-            load_image(Path(image_dir, raw12_file_list[current_image_index]))
+            file_name = raw12_file_list[current_image_index]
+            window.set_title('raw12 Viewer: ' + file_name)
             update_next_image_buttons()
+            load_image(Path(image_dir, file_name))
             show_images()
             pass
 
