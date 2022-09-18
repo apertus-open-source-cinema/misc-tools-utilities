@@ -250,6 +250,9 @@ def show_images():
     graph.erase()
     graph.draw_image(data=display_buffer.getvalue(), location=(0, RAW_HEIGHT))
 
+    # Limit dragging to the image size, if bigger than display area, otherwise display area is used
+    graph.tk_canvas.configure(scrollregion=graph.tk_canvas.bbox("all"))
+
 
 def move_image(values):
     global old_position
