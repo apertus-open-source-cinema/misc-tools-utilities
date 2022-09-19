@@ -175,22 +175,14 @@ def main_loop():
             current_image_index += 1
             if current_image_index == file_list_length - 1:
                 current_image_index = current_image_index
-            file_name = raw12_file_list[current_image_index]
-            window.set_title('raw12 Viewer: ' + file_name)
-            update_next_image_buttons()
-            load_image(Path(image_dir, file_name))
-            show_images()
+            handle_image_switching(current_image_index, image_dir, raw12_file_list, window)
             pass
 
         elif event == 'Left:113' or event == '-previous-image-':
             current_image_index -= 1
             if current_image_index == 0:
                 current_image_index = 0
-            file_name = raw12_file_list[current_image_index]
-            window.set_title('raw12 Viewer: ' + file_name)
-            update_next_image_buttons()
-            load_image(Path(image_dir, file_name))
-            show_images()
+            handle_image_switching(current_image_index, image_dir, raw12_file_list, window)
             pass
 
         elif event == '-display-mode-mono-':
@@ -225,6 +217,14 @@ def main_loop():
 
         elif event.startswith("IMAGE"):
             handle_image_dragging(event, values)
+
+
+def handle_image_switching(current_image_index, image_dir, raw12_file_list, window):
+    file_name = raw12_file_list[current_image_index]
+    window.set_title('raw12 Viewer: ' + file_name)
+    update_next_image_buttons()
+    load_image(Path(image_dir, file_name))
+    show_images()
 
 
 def handle_image_dragging(event, values):
