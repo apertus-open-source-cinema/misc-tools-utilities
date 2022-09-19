@@ -282,7 +282,14 @@ def start_dragging(event, values):
 
 
 def enumerate_image_files(dir_path):
+    if not dir_path:
+        return
+
     file_list = [fn for fn in os.listdir(dir_path) if fn.endswith('.raw12')]
+    if file_list is None:
+        print("No RAW12 file/s found")
+        exit(1)
+
     return sorted(file_list)
 
 
@@ -310,6 +317,18 @@ def load_image(path):
     color_image = Image.frombytes('RGB', (RAW_WIDTH, RAW_HEIGHT), color_data)
 
 
+def get_available_raw12_files(image_dir, requested_path):
+    global raw12_file_list, file_list_length, current_image_index
+    image_file_name = requested_path.name
+    raw12_file_list = enumerate_image_files(image_dir)
+    if raw12_file_list:
+        current_image_index = raw12_file_list.index(image_file_name)
+    else:
+        raw12_file_list = [requested_path]
+
+    file_list_length = len(raw12_file_list)
+
+
 def main():
     global current_image, color_image, decimation_factor, image_dir, \
         raw12_file_list, current_image_index, file_list_length
@@ -317,10 +336,7 @@ def main():
 
     requested_path = Path(args.raw_file)
     image_dir = os.path.dirname(requested_path)
-    image_file_name = requested_path.name
-    raw12_file_list = enumerate_image_files(image_dir)
-    file_list_length = len(raw12_file_list)
-    current_image_index = raw12_file_list.index(image_file_name)
+    get_available_raw12_files(image_dir, requested_path)
 
     load_image(Path(image_dir, raw12_file_list[current_image_index]))
     current_image = color_image
