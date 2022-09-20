@@ -175,14 +175,14 @@ def main_loop():
             current_image_index += 1
             if current_image_index > file_list_length - 1:
                 current_image_index = file_list_length - 1
-            handle_image_switching()
+            handle_image_switching(current_image_index, image_dir, raw12_file_list, window)
             pass
 
         elif event == 'Left:113' or event == '-previous-image-':
             current_image_index -= 1
             if current_image_index < 0:
                 current_image_index = 0
-            handle_image_switching()
+            handle_image_switching(current_image_index, image_dir, raw12_file_list, window)
             pass
 
         elif event == '-display-mode-mono-':
