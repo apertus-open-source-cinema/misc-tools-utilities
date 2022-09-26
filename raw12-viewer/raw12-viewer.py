@@ -6,24 +6,49 @@
 
 import argparse
 import io
+import os
 import time
-import glob, os
+from pathlib import Path
+
 import PySimpleGUI as sg
 import cv2
 import numpy as np
 from PIL import Image
+from PySimpleGUI import Window
 
 RAW_WIDTH = 3840
 RAW_HEIGHT = 2160
 
 NUM_REGS = 128
 
-window = None
+window: Window = None
 
-mono_image_data = io.BytesIO()
-color_image_data = io.BytesIO()
+color_image = None
+mono_image = None
+current_image = None
 
-image_raw = sg.Image(size=(640, 480))
+image_dir = ""
+raw12_file_list = []
+file_list_length = 0
+current_image_index = 0
+
+display_buffer = io.BytesIO()
+
+decimation_factor = 4
+
+graph = sg.Graph(key="IMAGE", canvas_size=(RAW_WIDTH, RAW_HEIGHT), graph_bottom_left=(0, 0),
+                 graph_top_right=(RAW_WIDTH, RAW_HEIGHT), enable_events=True, change_submits=True, drag_submits=True)
+
+SIZE_RESOLUTION_MAP = {
+    18874368: (4096, 3072),  # 4096*3072*12/8
+    18874624: (4096, 3072),  # 4096*3072*12/8+128*2
+    12441600: (3840, 2160),  # 3840*2160*12/8
+    13271040: (4096, 2160)  # 4096*2160*12/8
+}
+
+# Dragging
+old_position = None
+dragging = False
 
 
 def current_milli_time():
@@ -47,7 +72,7 @@ def read_uint8(data_chunk, image_path):
     data = np.frombuffer(data_chunk, dtype=np.uint8)
 
     file_size = os.path.getsize(image_path)
-    if file_size == int(4096*3072*12/8+128*2):
+    if file_size == 18874624:  # 4096 * 3072 * 12 / 8 + 128 * 2:
         data = data[:-256]
 
     fst_uint8, mid_uint8, lst_uint8 = np.reshape(data, (data.shape[0] // 3, 3)).astype(np.uint8).T
@@ -57,40 +82,43 @@ def read_uint8(data_chunk, image_path):
     return data
 
 
+def convert_to_image_data(image):
+    global display_buffer
+    display_buffer.seek(0)
+    image.save(display_buffer, format="PNG", compress_level=0)
+
+
 def setup_images(image_path):
-    global RAW_WIDTH, RAW_HEIGHT
+    global RAW_WIDTH, RAW_HEIGHT, color_image, color_image_data, mono_image_data, color_image, mono_image
 
     with open(image_path, "rb") as f:
 
         file_size = os.path.getsize(image_path)
-        if (file_size == int(4096*3072*12/8)) | (file_size == int(4096*3072*12/8+128*2)):
-            RAW_WIDTH = 4096
-            RAW_HEIGHT = 3072
-        if file_size == int(3840*2160*12/8):
-            RAW_WIDTH = 3840
-            RAW_HEIGHT = 2160
-        if file_size == int(4096*2160*12/8):
-            RAW_WIDTH = 4096
-            RAW_HEIGHT = 2160
+        if file_size in SIZE_RESOLUTION_MAP:
+            RAW_WIDTH, RAW_HEIGHT = SIZE_RESOLUTION_MAP.get(file_size)
+        else:
+            print("Image size is not compliant")
+            exit(1)
 
         raw_data = np.fromfile(f, dtype=np.uint8)
         image_data = read_uint8(raw_data, image_path)
         image_data = np.reshape(image_data, (RAW_HEIGHT, RAW_WIDTH))
 
-    #cv2.imwrite("8bittest.png", image_data, [cv2.IMWRITE_PNG_COMPRESSION, 0])
+    # Create monochrome image
+    mono_image = Image.frombytes('L', (RAW_WIDTH, RAW_HEIGHT), image_data)
 
-    global color_image_data, mono_image_data
-
-    monochrome_image = Image.frombytes('L', (RAW_WIDTH, RAW_HEIGHT), image_data)
-    monochrome_image.thumbnail((RAW_WIDTH / 3, RAW_HEIGHT / 3))
-    mono_image_data.seek(0)
-    monochrome_image.save(mono_image_data, format="PNG")
-
+    # Debayer data and create color image
     color_data = cv2.cvtColor(image_data, cv2.COLOR_BAYER_GR2RGB_EA)
     color_image = Image.frombytes('RGB', (RAW_WIDTH, RAW_HEIGHT), color_data)
-    color_image.thumbnail((RAW_WIDTH / 3, RAW_HEIGHT / 3))
-    color_image_data.seek(0)
-    color_image.save(color_image_data, format="PNG")
+
+
+def scale_image_data(factor):
+    global display_buffer
+
+    image = current_image.copy()
+    if factor > 1:
+        image.thumbnail((RAW_WIDTH / factor, RAW_HEIGHT / factor))
+    return image
 
 
 def setup_window():
@@ -107,143 +135,226 @@ def setup_window():
              sg.Radio('1:4', "decimation-mode", key='-decimation4-', default=True, enable_events=True),
              sg.Radio('1:8', "decimation-mode", key='-decimation8-', default=False, enable_events=True),
              sg.Button('->', key='-next-image-')],
-            [image_raw]
+            graph
         ]
     ]
 
     global window
-    window = sg.Window("raw12 Viewer: " + args.raw_file, layout, element_justification='c', resizable=True, return_keyboard_events=True,
-                       use_default_focus=False, finalize=True)
-    window.Finalize()
+    window = sg.Window("raw12 Viewer: " + args.raw_file, layout, element_justification='c', resizable=True,
+                       return_keyboard_events=True, use_default_focus=False, finalize=True)
+
+    graph.tk_canvas.configure(xscrollincrement="1", yscrollincrement="1")
+
 
 def update_next_image_buttons():
-    # Get list of all files in the same directory sorted by name
-    subfolder = os.path.dirname(os.path.abspath(current_image_name))
-    list_of_files = sorted(filter(os.path.isfile, glob.glob(subfolder +  '/*.raw12')))
+    global file_list_length, current_image_index
 
     window['-previous-image-'].Update(disabled=False)
     window['-next-image-'].Update(disabled=False)
-    
-    # extract indexes with image name match
-    index = [i for i, s in enumerate(list_of_files) if os.path.abspath(current_image_name) in s][0]
 
     # if this is the first image in directory
-    if index == 0:
-        #print('no further images in this directory')
+    if current_image_index == 0:
         window['-previous-image-'].Update(disabled=True)
 
     # if this is the last image in the directory
-    if len(list_of_files) == index+1:
-        #print('no further images in this directory')
+    if file_list_length == current_image_index + 1:
         window['-next-image-'].Update(disabled=True)
 
-def load_image_from_dir(targetindex):
-    global current_image_name
-
-    # Get list of all files in the same directory sorted by name
-    subfolder = os.path.dirname(os.path.abspath(current_image_name))
-    list_of_files = sorted(filter(os.path.isfile, glob.glob(subfolder +  '/*.raw12')))
-
-    # extract indexes with image name match
-    index = [i for i, s in enumerate(list_of_files) if os.path.abspath(current_image_name) in s][0]
-
-    # First image
-    if ((index == 0) & (targetindex < 0)):
-        return
-
-    # Last image
-    if ((len(list_of_files) == index+1) & (targetindex > 0)):
-        return
-
-    
-    next_image = list_of_files[index+targetindex]
-    print('Switching to image: ' + next_image)
-
-    # Update window title
-    window.set_title('raw12 Viewer: ' + next_image)
-
-    setup_images(next_image)
-    
-    current_image_name = next_image
-
-    if window['-display-mode-color-'].get():
-        show_images(color_image_data)
-    else:
-        show_images(mono_image_data)
-
-    update_next_image_buttons()
 
 def main_loop():
-    global window, current_image_name
+    global window, color_image, decimation_factor, current_image, current_image_index, raw12_file_list, image_dir, \
+        file_list_length
+
     while True:
-        event, values = window.Read()
-        if event is None:
+        event, values = window.read()
+        print(event)
+        if event == sg.WINDOW_CLOSED:
             break
 
-        if event == 'Right:114':
-            load_image_from_dir(1)
+        elif event == 'Right:114' or event == '-next-image-':
+            current_image_index += 1
+            if current_image_index > file_list_length - 1:
+                current_image_index = file_list_length - 1
+            handle_image_switching()
+            pass
 
-        if event == 'Left:113':
-            load_image_from_dir(-1)
+        elif event == 'Left:113' or event == '-previous-image-':
+            current_image_index -= 1
+            if current_image_index < 0:
+                current_image_index = 0
+            handle_image_switching()
+            pass
 
-        if event == '-next-image-':
-            load_image_from_dir(1)
-
-        if event == '-previous-image-':
-           load_image_from_dir(-1)
-
-        if event == '-display-mode-mono-':
-            # todo: switch to mono mode
+        elif event == '-display-mode-mono-':
             print('mono mode activated')
-            show_images(mono_image_data)
+            current_image = mono_image
+            show_images()
 
-        if event == '-display-mode-color-':
-            # todo: switch to color mode
+        elif event == '-display-mode-color-':
             print('color mode activated')
-            show_images(color_image_data)
+            current_image = color_image
+            show_images()
 
-        if event == '-decimation1-':
-            # todo: rescale to 1:1
+        elif event == '-decimation1-':
             print('decimation change 1:1')
+            decimation_factor = 1
+            show_images()
 
-        if event == '-decimation2-':
-            # todo: rescale to 1:2
+        elif event == '-decimation2-':
             print('decimation change 1:2')
+            decimation_factor = 2
+            show_images()
 
-        if event == '-decimation4-':
-            # todo: rescale to 1:4
+        elif event == '-decimation4-':
             print('decimation change 1:4')
+            decimation_factor = 4
+            show_images()
 
-        if event == '-decimation8-':
-            # todo: rescale to 1:8
+        elif event == '-decimation8-':
             print('decimation change 1:8')
+            decimation_factor = 8
+            show_images()
+
+        elif event.startswith("IMAGE"):
+            handle_image_dragging(event, values)
 
 
-def show_images(data=None):
-    if data is None:
+def handle_image_switching():
+    global current_image_index, image_dir, raw12_file_list, window
+    file_name = raw12_file_list[current_image_index]
+    window.set_title('raw12 Viewer: ' + str(file_name))
+    update_next_image_buttons()
+    load_image(Path(image_dir, file_name))
+    show_images()
+
+
+def handle_image_dragging(event, values):
+    global dragging
+    if dragging is False:
+        global old_position
+        old_position = values["IMAGE"]
+        dragging = True
+    move_image(values["IMAGE"])
+    if event.endswith("+UP"):
+        dragging = False
+
+
+def show_images():
+    global display_buffer, decimation_factor, current_image
+    current_image = mono_image
+    if window['-display-mode-color-'].get():
+        current_image = color_image
+
+    image = scale_image_data(decimation_factor)
+    convert_to_image_data(image)
+    graph.erase()
+    graph.draw_image(data=display_buffer.getvalue(), location=(0, RAW_HEIGHT))
+
+    # Limit dragging to the image size, if bigger than display area, otherwise display area is used
+    bounding_box = graph.tk_canvas.bbox("all")
+    graph.tk_canvas.configure(scrollregion=bounding_box)
+
+    # Center image
+    x_center = int(bounding_box[2] / 2)
+    y_center = int(bounding_box[3] / 2)
+    graph.tk_canvas.xview_scroll(x_center, "units")
+    graph.tk_canvas.yview_scroll(y_center, "units")
+
+
+def move_image(values):
+    global old_position
+    if old_position is None:
+        old_position = values
+
+    print(old_position)
+    print(values)
+    print(old_position[0] - values[0])
+
+    graph.tk_canvas.xview_scroll(old_position[0] - values[0], "units")
+    graph.tk_canvas.yview_scroll(-(old_position[1] - values[1]), "units")
+    old_position = values
+
+    print("TEST CLICK")
+
+
+def start_dragging(event, values):
+    global old_position
+    old_position = values
+
+
+def enumerate_image_files(dir_path):
+    if not dir_path:
         return
 
-    # bio = io.BytesIO()
-    # data.save(bio, format="PNG")
-    global image_raw
-    image_raw.update(data=data.getvalue())
+    file_list = [fn for fn in os.listdir(dir_path) if fn.endswith('.raw12')]
+    if file_list is None:
+        print("No RAW12 file/s found")
+        exit(1)
 
+    return sorted(file_list)
+
+
+def load_image(path):
+    global RAW_WIDTH, RAW_HEIGHT, color_image, color_image, mono_image
+
+    with open(path, "rb") as f:
+
+        file_size = os.path.getsize(path)
+        if file_size in SIZE_RESOLUTION_MAP:
+            RAW_WIDTH, RAW_HEIGHT = SIZE_RESOLUTION_MAP.get(file_size)
+        else:
+            print("Image size is not compliant")
+            exit(1)
+
+        raw_data = np.fromfile(f, dtype=np.uint8)
+        image_data = read_uint8(raw_data, path)
+        image_data = np.reshape(image_data, (RAW_HEIGHT, RAW_WIDTH))
+
+    # Create monochrome image
+    mono_image = Image.frombytes('L', (RAW_WIDTH, RAW_HEIGHT), image_data)
+
+    # Debayer data and create color image
+    color_data = cv2.cvtColor(image_data, cv2.COLOR_BAYER_GR2RGB_EA)
+    color_image = Image.frombytes('RGB', (RAW_WIDTH, RAW_HEIGHT), color_data)
+
+
+def get_available_raw12_files(image_dir, requested_path):
+    global raw12_file_list, file_list_length, current_image_index
+    image_file_name = requested_path.name
+    raw12_file_list = enumerate_image_files(image_dir)
+    if raw12_file_list:
+        current_image_index = raw12_file_list.index(image_file_name)
+    else:
+        raw12_file_list = [requested_path]
+
+    file_list_length = len(raw12_file_list)
 
 
 def main():
-    global current_image_name
+    global current_image, color_image, decimation_factor, image_dir, \
+        raw12_file_list, current_image_index, file_list_length
     start_time = current_milli_time()
-    current_image_name = args.raw_file
-    setup_images(current_image_name)
+
+    requested_path = Path(args.raw_file)
+    image_dir = os.path.dirname(requested_path)
+    get_available_raw12_files(image_dir, requested_path)
+
+    load_image(Path(image_dir, raw12_file_list[current_image_index]))
+    current_image = color_image
+    image = scale_image_data(decimation_factor)
+    convert_to_image_data(image)
+
     read_time = current_milli_time()
-    print('reading took: ' + str((read_time - start_time) / 1000) + ' s')
+    print('reading took: ' + str((read_time - start_time) / 1000) + 's')
 
     setup_window()
-    show_images(color_image_data)
+    show_images()
     display_time = current_milli_time()
-    print('displaying took: ' + str((display_time - start_time) / 1000) + ' s')
-    update_next_image_buttons()
 
+    print('displaying took: ' + str((display_time - read_time) / 1000) + 's')
+    print('total time: ' + str((display_time - start_time) / 1000) + 's')
+
+    update_next_image_buttons()
     main_loop()
 
 
