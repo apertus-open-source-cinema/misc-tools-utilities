@@ -36,6 +36,8 @@ display_buffer = io.BytesIO()
 
 decimation_factor = 4
 
+current_cfa_pattern = cv2.COLOR_BAYER_GR2RGB
+
 graph = sg.Graph(key="IMAGE", canvas_size=(RAW_WIDTH, RAW_HEIGHT), graph_bottom_left=(0, 0),
                  graph_top_right=(RAW_WIDTH, RAW_HEIGHT), enable_events=True, change_submits=True, drag_submits=True)
 
@@ -44,6 +46,13 @@ SIZE_RESOLUTION_MAP = {
     18874624: (4096, 3072),  # 4096*3072*12/8+128*2
     12441600: (3840, 2160),  # 3840*2160*12/8
     13271040: (4096, 2160)  # 4096*2160*12/8
+}
+
+BAYER_CV_MAP = {
+    "RGGB": cv2.COLOR_BAYER_RG2RGB,
+    "BGGR": cv2.COLOR_BAYER_BG2RGB,
+    "GRBG": cv2.COLOR_BAYER_GR2RGB,
+    "GBRG": cv2.COLOR_BAYER_GB2RGB
 }
 
 # Dragging
@@ -129,6 +138,8 @@ def setup_window():
             [sg.Button('<-', key='-previous-image-'), sg.Text('Display:'),
              sg.Radio('monochrome', "display-mode", key='-display-mode-mono-', default=False, enable_events=True),
              sg.Radio('color', "display-mode", key='-display-mode-color-', default=True, enable_events=True),
+             sg.Combo(["RGGB", "BGGR", "GBRG", "GRBG"], key="-cfa-pattern-", default_value="GRBG", enable_events=True,
+                      readonly=True),
              sg.Text('Resolution Decimation:'),
              sg.Radio('1:1', "decimation-mode", key='-decimation1-', default=False, enable_events=True),
              sg.Radio('1:2', "decimation-mode", key='-decimation2-', default=False, enable_events=True),
@@ -163,7 +174,7 @@ def update_next_image_buttons():
 
 def main_loop():
     global window, color_image, decimation_factor, current_image, current_image_index, raw12_file_list, image_dir, \
-        file_list_length
+        file_list_length, current_cfa_pattern
 
     while True:
         event, values = window.read()
@@ -217,6 +228,11 @@ def main_loop():
 
         elif event.startswith("IMAGE"):
             handle_image_dragging(event, values)
+
+        elif event == "-cfa-pattern-":
+            selected_pattern = values["-cfa-pattern-"]
+            current_cfa_pattern = BAYER_CV_MAP[selected_pattern]
+            handle_image_switching()
 
 
 def handle_image_switching():
@@ -295,7 +311,7 @@ def enumerate_image_files(dir_path):
 
 
 def load_image(path):
-    global RAW_WIDTH, RAW_HEIGHT, color_image, color_image, mono_image
+    global RAW_WIDTH, RAW_HEIGHT, color_image, color_image, mono_image, current_cfa_pattern
 
     with open(path, "rb") as f:
 
@@ -314,7 +330,7 @@ def load_image(path):
     mono_image = Image.frombytes('L', (RAW_WIDTH, RAW_HEIGHT), image_data)
 
     # Debayer data and create color image
-    color_data = cv2.cvtColor(image_data, cv2.COLOR_BAYER_GR2RGB_EA)
+    color_data = cv2.cvtColor(image_data, current_cfa_pattern)
     color_image = Image.frombytes('RGB', (RAW_WIDTH, RAW_HEIGHT), color_data)
 
 
