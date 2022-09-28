@@ -186,14 +186,14 @@ def main_loop():
             current_image_index += 1
             if current_image_index > file_list_length - 1:
                 current_image_index = file_list_length - 1
-            handle_image_switching(current_image_index, image_dir, raw12_file_list, window)
+            handle_image_switching()
             pass
 
         elif event == 'Left:113' or event == '-previous-image-':
             current_image_index -= 1
             if current_image_index < 0:
                 current_image_index = 0
-            handle_image_switching(current_image_index, image_dir, raw12_file_list, window)
+            handle_image_switching()
             pass
 
         elif event == '-display-mode-mono-':
@@ -299,8 +299,8 @@ def start_dragging(event, values):
 
 
 def enumerate_image_files(dir_path):
-    if not dir_path:
-        return
+    #if not dir_path:
+    #    return
 
     file_list = [fn for fn in os.listdir(dir_path) if fn.endswith('.raw12')]
     if file_list is None:
@@ -336,6 +336,10 @@ def load_image(path):
 
 def get_available_raw12_files(image_dir, requested_path):
     global raw12_file_list, file_list_length, current_image_index
+
+    if not image_dir:
+        image_dir = os.getcwd()
+
     image_file_name = requested_path.name
     raw12_file_list = enumerate_image_files(image_dir)
     if raw12_file_list:
