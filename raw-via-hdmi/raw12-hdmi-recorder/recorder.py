@@ -435,10 +435,10 @@ def main_loop():
 
         if event == '-show-preview-':
             foldername = window['-inputfolder-'].get() + '/' + window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[0]]
-            print ('cd ' + data['recorderfolder'] + " ; cargo run --release  ! RawDirectoryReader --file-pattern '" + foldername + "/*.raw12'" +
-                       ' --bit-depth 12 --height 2160 --width 3840 --first-red-x true --first-red-y false --fps 30  ! GpuBitDepthConverter ! Debayer ! Display')
-            p = Popen(['cd ' + data['recorderfolder'] + " ; cargo run --release  ! RawDirectoryReader --file-pattern '" + foldername + "/*.raw12'" +
-                       ' --bit-depth 12 --height 2160 --width 3840 --first-red-x true --first-red-y false --fps 30  ! GpuBitDepthConverter ! Debayer ! Display'],
+            print ('cd ' + data['recorderfolder'] + " ; target/release/cli from-cli RawDirectoryReader --file-pattern '" + foldername + "/*.raw12'" +
+                       ' --bit-depth 12 --height 2160 --width 3840 --red-in-first-row false --red-in-first-col true --fps 30  ! GpuBitDepthConverter ! Debayer ! Display')
+            p = Popen(['cd ' + data['recorderfolder'] + " ; target/release/cli from-cli RawDirectoryReader --file-pattern '" + foldername + "/*.raw12'" +
+                       ' --bit-depth 12 --height 2160 --width 3840 --red-in-first-row false --red-in-first-col true --fps 30  ! GpuBitDepthConverter ! Debayer ! Display'],
                       shell=True, stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
             q = Queue()
             t = Thread(target=enqueue_output, args=(p.stdout, q))
