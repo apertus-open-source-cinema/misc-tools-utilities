@@ -143,10 +143,10 @@ def update_clip_info():
                 p1.stdout.close()
 
                 # if all bgr files have been extracted disable the extract button
-                if bgr_frame_files_count == frames_rgb:
-                    window['-extract-'].Update(disabled=True)
-                else:
-                    window['-extract-'].Update(disabled=False)
+                #if bgr_frame_files_count == frames_rgb:
+                #    window['-extract-'].Update(disabled=True)
+                #else:
+                #    window['-extract-'].Update(disabled=False)
 
                 # How many *.raw12 files are in that folder already
                 p1 = subprocess.Popen('ls ' + window['-inputfolder-'].get() + "/" + foldername +
@@ -323,20 +323,21 @@ def setup():
 
     layout = [[sg.Text('AXIOM Beta IP: '), sg.Input(data['beta_ip'], key='-beta-ip-', size=(16, 10), enable_events=True), sg.Button('Test Connection', key='-test-ssh-connection-'),
               sg.Button('Init Raw Mode', key='-init-beta-raw-'), sg.Button('Download Sensor Registers', key='-sensor-registers-')],
-              [sg.Button('-', key=gain_dec), sg.Text('Gain: 1', key='-gain-'), sg.Button('+', key=gain_inc), 
-              sg.Button('-', key=shutter_dec), sg.Text('Shutter: 1/32', key='-shutter-'), sg.Button('+', key=shutter_inc),
-              sg.Button('-', key=hdr_slopes_dec), sg.Text('HDR Slopes: 1', key='-hdr-slopes-'), sg.Button('+', key=hdr_slopes_inc),
-              sg.Button('View Stream direcly', key=view_stream),
+              #[sg.Button('-', key=gain_dec), sg.Text('Gain: 1', key='-gain-'), sg.Button('+', key=gain_inc), 
+              #sg.Button('-', key=shutter_dec), sg.Text('Shutter: 1/32', key='-shutter-'), sg.Button('+', key=shutter_inc),
+              #sg.Button('-', key=hdr_slopes_dec), sg.Text('HDR Slopes: 1', key='-hdr-slopes-'), sg.Button('+', key=hdr_slopes_inc),
+              [sg.Button('View Stream direcly', key=view_stream),
               sg.Button('View decoded raw Stream', key=view_raw_stream), record_button],
               [sg.Text('Recording Directory: '), sg.Input(data['inputfolder'], key='-inputfolder-', enable_events=True),
-               sg.FolderBrowse(target='-inputfolder-', initial_folder=data['inputfolder'])],
+              sg.FolderBrowse(target='-inputfolder-', initial_folder=data['inputfolder'])],
               [sg.Text('Recordings:'), sg.Button('Reload', key="-reload-recordings-")],
               [sg.Listbox(values=('Loading...', 'Listbox 2', 'Listbox 3'), size=(
                   30, 5), key='-recordings-', enable_events=True), sg.Text('Clipinfo:\n', key='-clipinfo-')],
-              [sg.Text('Free Disk Space: ' + str(space) + "GiB"), sg.Button('Update Clipinfo'), sg.Button('Extract Frames', key='-extract-'),
-              sg.Text('Convert to:'), sg.Combo(['raw12', 'dng', 'raw12&dng'],
-                        default_value='raw12&dng', key='-conversion-target-'),
-               sg.Button('Convert Frames', key='-convert-')],
+              [sg.Text('Free Disk Space: ' + str(space) + "GiB"), sg.Button('Update Clipinfo')], 
+            #sg.Button('Extract Frames', key='-extract-'),
+            #  sg.Text('Convert to:'), sg.Combo(['raw12', 'dng', 'raw12&dng'],
+            #            default_value='raw12&dng', key='-conversion-target-'),
+           #    sg.Button('Convert Frames', key='-convert-')],
               [sg.Text('Recorder Directory: '), sg.Input(data['recorderfolder'], key='-recorderfolder-', size=(35,10), enable_events=True),
                sg.FolderBrowse(target='-recorderfolder-', initial_folder=data['recorderfolder']), sg.Button('Show Preview', key='-show-preview-')]]
 
