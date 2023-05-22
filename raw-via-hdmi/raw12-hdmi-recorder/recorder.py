@@ -191,6 +191,15 @@ def view_stream():
     stream = os.popen('ffplay ' + video_device)
     stream.read()
 
+def view_raw_stream():
+    p = Popen(['cd ' + data['recorderfolder'] + " ; target/release/cli from-cli WebcamInput --device 0 ! DualFrameRawDecoder ! GpuBitDepthConverter ! Debayer ! Display --fullscreen true"],
+                      shell=True, stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
+    q = Queue()
+    t = Thread(target=enqueue_output, args=(p.stdout, q))
+    t.daemon = True  # thread dies with the program
+    t.start()
+    print("live raw preview started")
+
 
 def shutter_inc():
     global shutter_index, shutter_options, data, shutter_values
@@ -317,7 +326,8 @@ def setup():
               [sg.Button('-', key=gain_dec), sg.Text('Gain: 1', key='-gain-'), sg.Button('+', key=gain_inc), 
               sg.Button('-', key=shutter_dec), sg.Text('Shutter: 1/32', key='-shutter-'), sg.Button('+', key=shutter_inc),
               sg.Button('-', key=hdr_slopes_dec), sg.Text('HDR Slopes: 1', key='-hdr-slopes-'), sg.Button('+', key=hdr_slopes_inc),
-              sg.Button('View Stream', key=view_stream), record_button],
+              sg.Button('View Stream direcly', key=view_stream),
+              sg.Button('View decoded raw Stream', key=view_raw_stream), record_button],
               [sg.Text('Recording Directory: '), sg.Input(data['inputfolder'], key='-inputfolder-', enable_events=True),
                sg.FolderBrowse(target='-inputfolder-', initial_folder=data['inputfolder'])],
               [sg.Text('Recordings:'), sg.Button('Reload', key="-reload-recordings-")],
@@ -437,9 +447,16 @@ def main_loop():
             foldername = window['-inputfolder-'].get() + '/' + window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[0]]
             print ('cd ' + data['recorderfolder'] + " ; target/release/cli from-cli RawDirectoryReader --file-pattern '" + foldername + "/*.raw12'" +
                        ' --bit-depth 12 --height 2160 --width 3840 --red-in-first-row false --red-in-first-col true --fps 30  ! GpuBitDepthConverter ! Debayer ! Display --fullscreen true')
+#            p = Popen(['cd ' + data['recorderfolder'] + " ; cargo run --release  ! RawDirectoryReader --file-pattern '" + foldername + "/*.raw12'" +
+                      # ' --bit-depth 12 --height 2160 --width 3840 --first-red-x true --first-red-y false --fps 30  ! GpuBitDepthConverter ! Debayer ! Display'],
+                #      shell=True, stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
+
             p = Popen(['cd ' + data['recorderfolder'] + " ; target/release/cli from-cli RawDirectoryReader --file-pattern '" + foldername + "/*.raw12'" +
                        ' --bit-depth 12 --height 2160 --width 3840 --red-in-first-row false --red-in-first-col true --fps 30  ! GpuBitDepthConverter ! Debayer ! Display --fullscreen true'],
                       shell=True, stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
+
+#target/release/cli from-cli RawDirectoryReader --file-pattern '/mnt/6816eb16-437e-4d93-8365-84213d4de9ad/Clip_00003/*.raw12' --bit-depth 12 --height 2160 --width 3840 --red-in-first-row false --red-in-first-col true --fps 30  ! GpuBitDepthConverter ! Debayer ! Display
+
             q = Queue()
             t = Thread(target=enqueue_output, args=(p.stdout, q))
             t.daemon = True  # thread dies with the program
