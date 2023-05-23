@@ -100,6 +100,9 @@ def update_recordings_list():
             elif glob.glob(window['-inputfolder-'].get() + "/" + foldername + '/*.data'):
                 # print(foldername)
                 directories.append(foldername)
+            elif glob.glob(window['-inputfolder-'].get() + "/" + foldername + '/*.dng'):
+                # print(foldername)
+                directories.append(foldername)
     try:
         window['-recordings-'].update(values=directories)
     except:
@@ -277,6 +280,7 @@ def handle_recording():
 
 
 def start_recording():
+
     # create new folder with highest not existing clip index
     global clip_index, last_recorded_clip
     folderdir = window['-inputfolder-'].get() + "/Clip_" + f'{clip_index:05d}'
@@ -296,18 +300,23 @@ def start_recording():
     #current_stream_process = Popen('exec ffmpeg -i ' + video_device +
      #                              ' -map 0 -pix_fmt rgb24 ' + folderdir + '/' + 'Clip_' + f'{clip_index:05d}' + '.rgb', shell=True)
     global current_stream_process
-    print('cd ' + data['recorderfolder'] + " ; target/release/cli from-cli WebcamInput --device 0 ! DualFrameRawDecoder ! RawDirectoryWriter --path "  + folderdir + "/")
-    current_stream_process = Popen('cd ' + data['recorderfolder'] + " ; target/release/cli from-cli WebcamInput --device 0 ! DualFrameRawDecoder ! RawDirectoryWriter --path " + folderdir + "/", shell=True, preexec_fn=os.setsid)
-    print("Recording started")
-    last_recorded_clip = folderdir + '/*}' + '.data'
+
+    if (window['-rec-format-'].get() is "DNG"):
+        print('cd ' + data['recorderfolder'] + " ; target/release/cli from-cli WebcamInput --device 0 ! DualFrameRawDecoder ! CinemaDngWriter --path "  + folderdir + "/")
+        current_stream_process = Popen('cd ' + data['recorderfolder'] + " ; target/release/cli from-cli WebcamInput --device 0 ! DualFrameRawDecoder ! CinemaDngWriter --path " + folderdir + "/", shell=True, preexec_fn=os.setsid)
+        print("DNG recording started")
+        last_recorded_clip = folderdir + '/*.dng'
+    else:
+        print('cd ' + data['recorderfolder'] + " ; target/release/cli from-cli WebcamInput --device 0 ! DualFrameRawDecoder ! RawDirectoryWriter --path "  + folderdir + "/")
+        current_stream_process = Popen('cd ' + data['recorderfolder'] + " ; target/release/cli from-cli WebcamInput --device 0 ! DualFrameRawDecoder ! RawDirectoryWriter --path " + folderdir + "/", shell=True, preexec_fn=os.setsid)
+        print("raw12 recording started")
+        last_recorded_clip = folderdir + '/*.data'
 
 
 def stop_recording():
     global current_stream_process, last_recorded_clip
     if current_stream_process is not None:
         os.killpg(os.getpgid(current_stream_process.pid), signal.SIGTERM)
-        #current_stream_process.kill()
-        #current_stream_process.wait()
 
     print("Recording stopped")
     current_stream_process = None
@@ -337,19 +346,21 @@ def setup():
               #sg.Button('-', key=shutter_dec), sg.Text('Shutter: 1/32', key='-shutter-'), sg.Button('+', key=shutter_inc),
               #sg.Button('-', key=hdr_slopes_dec), sg.Text('HDR Slopes: 1', key='-hdr-slopes-'), sg.Button('+', key=hdr_slopes_inc),
               [sg.Button('View Stream direcly', key=view_stream),
-              sg.Button('View decoded raw Stream', key=view_raw_stream), record_button],
-              [sg.Text('Recording Directory: '), sg.Input(data['inputfolder'], key='-inputfolder-', enable_events=True),
-              sg.FolderBrowse(target='-inputfolder-', initial_folder=data['inputfolder'])],
+              sg.Button('View decoded raw Stream', key=view_raw_stream), record_button, sg.Text('Rec Format:'), sg.Combo(['raw12', 'DNG'], default_value='DNG', key='-rec-format-'),],
+              
               [sg.Text('Recordings:'), sg.Button('Reload', key="-reload-recordings-")],
               [sg.Listbox(values=('Loading...', 'Listbox 2', 'Listbox 3'), size=(
-                  30, 5), key='-recordings-', enable_events=True), sg.Text('Clipinfo:\n', key='-clipinfo-')],
+                  40, 10), key='-recordings-', enable_events=True), sg.Text('Clipinfo:\n', key='-clipinfo-')],
               [sg.Text('Free Disk Space: ' + str(space) + "GiB"), sg.Button('Update Clipinfo')], 
             #sg.Button('Extract Frames', key='-extract-'),
             #  sg.Text('Convert to:'), sg.Combo(['raw12', 'dng', 'raw12&dng'],
             #            default_value='raw12&dng', key='-conversion-target-'),
            #    sg.Button('Convert Frames', key='-convert-')],
+              [sg.Text('Recording Directory: '), sg.Input(data['inputfolder'], key='-inputfolder-', enable_events=True),
+              sg.FolderBrowse(target='-inputfolder-', initial_folder=data['inputfolder'])],
               [sg.Text('Recorder Directory: '), sg.Input(data['recorderfolder'], key='-recorderfolder-', size=(35,10), enable_events=True),
-               sg.FolderBrowse(target='-recorderfolder-', initial_folder=data['recorderfolder']), sg.Button('Show Preview', key='-show-preview-')]]
+               sg.FolderBrowse(target='-recorderfolder-', initial_folder=data['recorderfolder'])], 
+              [sg.Button('Play Selected Clip', key='-show-preview-'), sg.Button('Play Last Clip', key='-play-last-clip-')]]
 
     global window
     window = sg.Window('AXIOM Recorder', layout, resizable=True, finalize=True)
@@ -453,6 +464,21 @@ def main_loop():
  #           t = Thread(target=enqueue_output, args=(p.stdout, q))
  #           t.daemon = True  # thread dies with the program
  #           t.start()
+        if event == '-play-last-clip-':
+            global last_recorded_clip
+            print(last_recorded_clip)
+           
+            if ("*.dng" in last_recorded_clip):
+                p = Popen(['cd ' + data['recorderfolder'] + " ; target/release/cli from-cli CinemaDngReader --file-pattern '" + last_recorded_clip + "'" +
+                ' ! GpuBitDepthConverter ! Debayer ! Display --fullscreen true'],
+                      shell=True, stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
+                print("last DNG clip playback started")
+
+            elif ("*.data" in last_recorded_clip):
+                 p = Popen(['cd ' + data['recorderfolder'] + " ; target/release/cli from-cli RawDirectoryReader --file-pattern '" + last_recorded_clip + "'" +
+                 ' --bit-depth 12 --height 2160 --width 3840 --red-in-first-row false --red-in-first-col true --fps 30  ! GpuBitDepthConverter ! Debayer ! Display --fullscreen true'],
+                      shell=True, stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
+                 print("last raw12/data clip playback started")
 
         if event == '-show-preview-':
             foldername = window['-inputfolder-'].get() + '/' + window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[0]]
@@ -461,6 +487,13 @@ def main_loop():
                        ' --bit-depth 12 --height 2160 --width 3840 --red-in-first-row false --red-in-first-col true --fps 30  ! GpuBitDepthConverter ! Debayer ! Display --fullscreen true')
                 p = Popen(['cd ' + data['recorderfolder'] + " ; target/release/cli from-cli RawDirectoryReader --file-pattern '" + foldername + "/*.data'" +
                        ' --bit-depth 12 --height 2160 --width 3840 --red-in-first-row false --red-in-first-col true --fps 30  ! GpuBitDepthConverter ! Debayer ! Display --fullscreen true'],
+                      shell=True, stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
+
+            if glob.glob(foldername + '/*.dng'):
+                print ('cd ' + data['recorderfolder'] + " ; target/release/cli from-cli CinemaDngReader --file-pattern '" + foldername + "/*.dng'" +
+                       ' ! GpuBitDepthConverter ! Debayer ! Display --fullscreen true')
+                p = Popen(['cd ' + data['recorderfolder'] + " ; target/release/cli from-cli CinemaDngReader --file-pattern '" + foldername + "/*.dng'" +
+                       ' ! GpuBitDepthConverter ! Debayer ! Display --fullscreen true'],
                       shell=True, stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
 
             elif glob.glob(foldername + '/*.raw12'):
@@ -480,7 +513,7 @@ def main_loop():
             t = Thread(target=enqueue_output, args=(p.stdout, q))
             t.daemon = True  # thread dies with the program
             t.start()
-            print("preview playback started")
+            print("clip playback started")
             
 
 
