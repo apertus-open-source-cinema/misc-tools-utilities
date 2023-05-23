@@ -7,6 +7,7 @@
 import getopt
 import glob
 import os
+import signal
 import subprocess
 import shutil
 import sys
@@ -93,7 +94,10 @@ def update_recordings_list():
         if os.path.isdir(window['-inputfolder-'].get() + "/" + foldername):
             # print(foldername)
             # Check if there is a folder with an #.rgb file inside
-            if glob.glob(window['-inputfolder-'].get() + "/" + foldername + '/*.rgb'):
+            if glob.glob(window['-inputfolder-'].get() + "/" + foldername + '/*.raw12'):
+                # print(foldername)
+                directories.append(foldername)
+            elif glob.glob(window['-inputfolder-'].get() + "/" + foldername + '/*.data'):
                 # print(foldername)
                 directories.append(foldername)
     try:
@@ -273,38 +277,44 @@ def handle_recording():
 
 
 def start_recording():
+    # create new folder with highest not existing clip index
     global clip_index, last_recorded_clip
     folderdir = window['-inputfolder-'].get() + "/Clip_" + f'{clip_index:05d}'
     while 1:
         if not os.path.exists(folderdir):
-            os.mkdir(folderdir)
-            print("Directory ", folderdir, " Created ")
+            #os.mkdir(folderdir)
+            #print("Directory ", folderdir, " Created ")
             break
         else:
             print("Directory ", folderdir, " already exists")
             clip_index += 1
             folderdir = window['-inputfolder-'].get() + "/Clip_" + f'{clip_index:05d}'
 
-    print('ffmpeg -i ' + video_device + ' -map 0 -pix_fmt rgb24 ' +
-          folderdir + '/' + 'Clip_' + f'{clip_index:05d}' + '.rgb')
+    #print('ffmpeg -i ' + video_device + ' -map 0 -pix_fmt rgb24 ' +
+    #      folderdir + '/' + 'Clip_' + f'{clip_index:05d}' + '.rgb')
+    #global current_stream_process
+    #current_stream_process = Popen('exec ffmpeg -i ' + video_device +
+     #                              ' -map 0 -pix_fmt rgb24 ' + folderdir + '/' + 'Clip_' + f'{clip_index:05d}' + '.rgb', shell=True)
     global current_stream_process
-    current_stream_process = Popen('exec ffmpeg -i ' + video_device +
-                                   ' -map 0 -pix_fmt rgb24 ' + folderdir + '/' + 'Clip_' + f'{clip_index:05d}' + '.rgb', shell=True)
+    print('cd ' + data['recorderfolder'] + " ; target/release/cli from-cli WebcamInput --device 0 ! DualFrameRawDecoder ! RawDirectoryWriter --path "  + folderdir + "/")
+    current_stream_process = Popen('cd ' + data['recorderfolder'] + " ; target/release/cli from-cli WebcamInput --device 0 ! DualFrameRawDecoder ! RawDirectoryWriter --path " + folderdir + "/", shell=True, preexec_fn=os.setsid)
     print("Recording started")
-    last_recorded_clip = folderdir + '/' + 'Clip_' + f'{clip_index:05d}' + '.rgb'
+    last_recorded_clip = folderdir + '/*}' + '.data'
 
 
 def stop_recording():
     global current_stream_process, last_recorded_clip
     if current_stream_process is not None:
-        current_stream_process.kill()
-        current_stream_process.wait()
+        os.killpg(os.getpgid(current_stream_process.pid), signal.SIGTERM)
+        #current_stream_process.kill()
+        #current_stream_process.wait()
 
     print("Recording stopped")
     current_stream_process = None
 
-    print('Downloading Sensor Registers from: ' + window['-beta-ip-'].get())
-    write_sensor_registers(window['-beta-ip-'].get(), last_recorded_clip + ".registers")
+    #print('Downloading Sensor Registers from: ' + window['-beta-ip-'].get())
+    #write_sensor_registers(window['-beta-ip-'].get(), last_recorded_clip + ".registers")
+    
     update_recordings_list()
 
 
@@ -446,13 +456,21 @@ def main_loop():
 
         if event == '-show-preview-':
             foldername = window['-inputfolder-'].get() + '/' + window['-recordings-'].Values[window['-recordings-'].Widget.curselection()[0]]
-            print ('cd ' + data['recorderfolder'] + " ; target/release/cli from-cli RawDirectoryReader --file-pattern '" + foldername + "/*.raw12'" +
+            if glob.glob(foldername + '/*.data'):
+                print ('cd ' + data['recorderfolder'] + " ; target/release/cli from-cli RawDirectoryReader --file-pattern '" + foldername + "/*.data'" +
+                       ' --bit-depth 12 --height 2160 --width 3840 --red-in-first-row false --red-in-first-col true --fps 30  ! GpuBitDepthConverter ! Debayer ! Display --fullscreen true')
+                p = Popen(['cd ' + data['recorderfolder'] + " ; target/release/cli from-cli RawDirectoryReader --file-pattern '" + foldername + "/*.data'" +
+                       ' --bit-depth 12 --height 2160 --width 3840 --red-in-first-row false --red-in-first-col true --fps 30  ! GpuBitDepthConverter ! Debayer ! Display --fullscreen true'],
+                      shell=True, stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
+
+            elif glob.glob(foldername + '/*.raw12'):
+                print ('cd ' + data['recorderfolder'] + " ; target/release/cli from-cli RawDirectoryReader --file-pattern '" + foldername + "/*.raw12'" +
                        ' --bit-depth 12 --height 2160 --width 3840 --red-in-first-row false --red-in-first-col true --fps 30  ! GpuBitDepthConverter ! Debayer ! Display --fullscreen true')
 #            p = Popen(['cd ' + data['recorderfolder'] + " ; cargo run --release  ! RawDirectoryReader --file-pattern '" + foldername + "/*.raw12'" +
                       # ' --bit-depth 12 --height 2160 --width 3840 --first-red-x true --first-red-y false --fps 30  ! GpuBitDepthConverter ! Debayer ! Display'],
                 #      shell=True, stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
 
-            p = Popen(['cd ' + data['recorderfolder'] + " ; target/release/cli from-cli RawDirectoryReader --file-pattern '" + foldername + "/*.raw12'" +
+                p = Popen(['cd ' + data['recorderfolder'] + " ; target/release/cli from-cli RawDirectoryReader --file-pattern '" + foldername + "/*.raw12'" +
                        ' --bit-depth 12 --height 2160 --width 3840 --red-in-first-row false --red-in-first-col true --fps 30  ! GpuBitDepthConverter ! Debayer ! Display --fullscreen true'],
                       shell=True, stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
 
