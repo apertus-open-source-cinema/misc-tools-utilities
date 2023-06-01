@@ -93,16 +93,19 @@ def update_recordings_list():
         #print (window['-inputfolder-'].get() + "/" + foldername)
         if os.path.isdir(window['-inputfolder-'].get() + "/" + foldername):
             # print(foldername)
-            # Check if there is a folder with an #.rgb file inside
+            # Check if there is a folder with an #.raw12 file inside
             if glob.glob(window['-inputfolder-'].get() + "/" + foldername + '/*.raw12'):
                 # print(foldername)
                 directories.append(foldername)
+            # Check if there is a folder with an #.data file inside
             elif glob.glob(window['-inputfolder-'].get() + "/" + foldername + '/*.data'):
                 # print(foldername)
                 directories.append(foldername)
+            # Check if there is a folder with an #.dng file inside
             elif glob.glob(window['-inputfolder-'].get() + "/" + foldername + '/*.dng'):
                 # print(foldername)
                 directories.append(foldername)
+    directories.sort()
     try:
         window['-recordings-'].update(values=directories)
     except:
