@@ -4,7 +4,7 @@ Output is not meant to replace a proper raw development workflow but is meant as
 
 # Prerequsiites
 ```
-sudo apt install python3 python3-pip python3-tk
+sudo apt install python3 python3-pip python3-tk python3-opencv
 pip3 install PySimpleGUI
 ```
 
