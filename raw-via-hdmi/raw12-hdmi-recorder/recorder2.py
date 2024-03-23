@@ -329,7 +329,7 @@ def test_button_callback(sender, app_data):
     
 
 with dpg.font_registry():
-    default_font = dpg.add_font("/home/seb/Documents/GitHub/misc-tools-utilities/raw-via-hdmi/raw12-hdmi-recorder/OpenSans-Regular.ttf", 22)
+    default_font = dpg.add_font("OpenSans-Regular.ttf", 22)
 
 with dpg.window(tag="AXIOM Recorder GUI"):
     dpg.bind_font(default_font)
