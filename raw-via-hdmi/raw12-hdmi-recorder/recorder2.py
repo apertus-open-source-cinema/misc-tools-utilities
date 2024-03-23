@@ -38,6 +38,9 @@ window = None
 current_stream_process = None
 last_recorded_clip = ""
 
+video_device_input_text = dpg.generate_uuid()
+
+
 def safe_config_to_file():
     with open('recorder.json', 'w') as f:
         json.dump(data, f)
@@ -199,66 +202,6 @@ def view_raw_stream():
     t.start()
     print("live raw preview started")
 
-
-def shutter_inc():
-    global shutter_index, shutter_options, data, shutter_values
-    shutter_index += 1 
-    if shutter_index > 5:
-        shutter_index = 5
-    window['-shutter-'].update('Shutter: ' + str(shutter_options[shutter_index]))
-    stream = os.popen('ssh root@' + data['beta_ip'] + ' "axiom_snap -e '+ str(shutter_values[shutter_index]) + 'ms -z"')
-    print(stream.read())
-
-
-def shutter_dec():
-    global shutter_index, shutter_options, data, shutter_values
-    shutter_index -= 1 
-    if shutter_index < 0:
-        shutter_index = 0
-    window['-shutter-'].update('Shutter: ' + str(shutter_options[shutter_index]))
-    stream = os.popen('ssh root@' + data['beta_ip'] + ' "axiom_snap -e '+ str(shutter_values[shutter_index]) + 'ms -z"')
-    print(stream.read())
-
-
-def gain_inc():
-    global gain_index, gain_options, data
-    gain_index +=1 
-    if gain_index > 3:
-        gain_index = 3
-    window['-gain-'].update('Gain: ' + str(gain_options[gain_index]))
-    stream = os.popen('ssh root@' + data['beta_ip'] + ' "axiom_set_gain.sh ' + str(gain_options[gain_index]) + '"')
-    print(stream.read())
-
-
-def gain_dec():
-    global gain_index, gain_options, data
-    gain_index -=1 
-    if gain_index < 0:
-        gain_index = 0
-    window['-gain-'].update('Gain: ' + str(gain_options[gain_index]))
-    stream = os.popen('ssh root@' + data['beta_ip'] + ' "axiom_set_gain.sh ' + str(gain_options[gain_index]) + '"')
-    print(stream.read())
-
-
-def hdr_slopes_dec():
-    global hdr_slopes
-    hdr_slopes -= 1
-    if hdr_slopes < 1:
-        hdr_slopes = 1
-    window['-hdr-slopes-'].update('HDR Slopes: ' + str(hdr_slopes))
-    stream = os.popen('ssh root@' + data['beta_ip'] + ' "axiom_cmv_reg 79 ' + str(hdr_slopes) + '"')
-    print(stream.read())
-
-def hdr_slopes_inc():
-    global hdr_slopes
-    hdr_slopes += 1
-    if hdr_slopes > 3:
-        hdr_slopes = 3
-    window['-hdr-slopes-'].update('HDR Slopes: ' + str(hdr_slopes))
-    stream = os.popen('ssh root@' + data['beta_ip'] + ' "axiom_cmv_reg 79 ' + str(hdr_slopes) + '"')
-    print(stream.read())
-
-
 record_button = None
 
 
@@ -323,6 +266,7 @@ def write_sensor_registers(BetaIP, filepath):
     stream = os.popen('ssh root@' + BetaIP + ' "axiom_snap -E -r -z" > ' + filepath)
     print(stream.read())
 
+
 def test_button_callback(sender, app_data):
     print(f"sender is: {sender}")
     print(f"app_data is: {app_data}")
@@ -334,7 +278,6 @@ with dpg.font_registry():
 with dpg.window(tag="AXIOM Recorder GUI"):
     dpg.bind_font(default_font)
 
-
     with dpg.tab_bar():
         with dpg.tab(label="Main"):
             dpg.add_button(label="Test", callback=test_button_callback, width=200, height=50)
@@ -344,6 +287,8 @@ with dpg.window(tag="AXIOM Recorder GUI"):
             dpg.add_button(label="Clips", width=200, height=50)
             dpg.add_button(label="View HDMI Signal", callback=view_stream, width=200, height=50)
         with dpg.tab(label="Config"):
+            dpg.add_input_text(label="Video Device", tag=video_device_input_text)
+            dpg.set_value(video_device_input_text, video_device)
             dpg.add_input_text(label="AXIOM Beta IP")
             dpg.add_input_text(label="AXIOM Recorder Path")
             dpg.add_input_text(label="Recording Folder")
@@ -369,11 +314,11 @@ def main(argv):
         opts, args = getopt.getopt(argv, "d:h:",
                                    ["help", "video-device"])
     except getopt.GetoptError:
-        print('recorder.py -d <video-device>')
+        print('recorder2.py -d <video-device>')
         window.close()
     for opt, arg in opts:
         if opt in ("-h", "--help"):
-            print('recorder.py -d <video-device>')
+            print('recorder2.py -d <video-device>')
             sys.exit()
         elif opt in ("-d", "--video-device"):
             video_device = arg.strip()
