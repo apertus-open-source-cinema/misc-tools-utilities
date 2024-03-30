@@ -39,11 +39,14 @@ current_stream_process = None
 last_recorded_clip = ""
 
 video_device_input_text = dpg.generate_uuid()
+axiom_recorder_path = dpg.generate_uuid()
+axiom_recording_path = dpg.generate_uuid()
 
 
 def safe_config_to_file():
     with open('recorder.json', 'w') as f:
         json.dump(data, f)
+    print('recorder.json written')
 
 # check if recorder.json exists, create default one if not
 if not os.path.exists('recorder.json'):
@@ -54,11 +57,11 @@ if not os.path.exists('recorder.json'):
 f = open('recorder.json')
 data = json.load(f)
 
-if 'inputfolder' in data:
-    print('found inputfolder: ' + data['inputfolder'])
+if 'recordingfolder' in data:
+    print('found recordingfolder: ' + data['recordingfolder'])
 else:
-    print('no input folder found in config, loading default')
-    data['inputfolder'] = os.getcwd()
+    print('no recordingfolder found in config, loading default')
+    data['recordingfolder'] = os.getcwd()
 
 if 'recorderfolder' in data:
         print('found recorderfolder: ' + data['recorderfolder'])
@@ -188,7 +191,6 @@ def get_rgb_file():
         if filename.endswith(".rgb"):
             return window['-inputfolder-'].get() + '/' + foldername + '/' + filename
 
-
 def view_stream_color():
     stream = os.popen('ffplay ' + video_device)
     stream.read()
@@ -270,8 +272,25 @@ def write_sensor_registers(BetaIP, filepath):
 def test_button_callback(sender, app_data):
     print(f"sender is: {sender}")
     print(f"app_data is: {app_data}")
-    
 
+def recorder_file_dialog_callback(sender, app_data):
+    #print("App Data: ", app_data)
+    data['recorderfolder'] = app_data['file_path_name']
+    dpg.set_value(axiom_recorder_path, app_data['file_path_name'])
+
+
+def recording_file_dialog_callback(sender, app_data):
+    #print("App Data: ", app_data)
+    data['recordingfolder'] = app_data['file_path_name']
+    dpg.set_value(axiom_recording_path, app_data['file_path_name'])
+
+
+dpg.add_file_dialog(
+    directory_selector=True, show=False, callback=recorder_file_dialog_callback, tag="recorder_file_dialog_id", width=700 ,height=400)
+
+dpg.add_file_dialog(
+    directory_selector=True, show=False, callback=recording_file_dialog_callback, tag="recording_file_dialog_id", width=700 ,height=400)
+    
 with dpg.font_registry():
     default_font = dpg.add_font(os.path.dirname(os.path.realpath(__file__)) + "/OpenSans-Regular.ttf", 22)
 
@@ -279,19 +298,26 @@ with dpg.window(tag="AXIOM Recorder GUI"):
     dpg.bind_font(default_font)
 
     with dpg.tab_bar():
-        with dpg.tab(label="Main"):
+        with dpg.tab(label="Record"):
             dpg.add_button(label="Callback Test", callback=test_button_callback, width=200, height=50)
             dpg.add_button(label="REC", width=200, height=50)
             dpg.add_button(label="Play Last Clip", width=200, height=50)
-            dpg.add_button(label="Clips", width=200, height=50)
             dpg.add_button(label="View HDMI Signal (color)", callback=view_stream_color, width=200, height=50)
             dpg.add_button(label="View HDMI Signal (raw)", callback=view_stream_raw, width=200, height=50)
+        with dpg.tab(label="Clips"):
+            dpg.add_listbox(label="Clips", width=500)
         with dpg.tab(label="Config"):
             dpg.add_input_text(label="Video Device", tag=video_device_input_text)
             dpg.set_value(video_device_input_text, video_device)
             #dpg.add_input_text(label="AXIOM Beta IP")
-            dpg.add_input_text(label="AXIOM Recorder Path")
-            dpg.add_input_text(label="Recording Folder")
+            dpg.add_input_text(label="AXIOM Recorder Path", tag=axiom_recorder_path)
+            dpg.set_value(axiom_recorder_path, data['recorderfolder'])
+            dpg.add_button(label="Browse AXIOM Recorder Directory", callback=lambda: dpg.show_item("recorder_file_dialog_id"))
+            dpg.add_input_text(label="Recording Folder", tag=axiom_recording_path)
+            dpg.set_value(axiom_recording_path, data['recordingfolder'])
+            dpg.add_button(label="Browse Recording Directory", callback=lambda: dpg.show_item("recording_file_dialog_id"))
+            dpg.add_button(label="Write Config", width=200, height=50, callback=safe_config_to_file)
+
 
 
 dpg.set_primary_window("AXIOM Recorder GUI", True)
@@ -323,11 +349,6 @@ def main(argv):
             video_device = arg.strip()
 
     print('Using Video Device: ', video_device)
-
-    # setup()
-    # main_loop()
-    # window.close()
-
 
 if __name__ == "__main__":
     main(sys.argv[1:])
