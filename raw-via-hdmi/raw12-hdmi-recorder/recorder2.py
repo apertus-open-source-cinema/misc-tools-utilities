@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-# SPDX-FileCopyrightText: © 2021 Sebastian Pichelhofer <sp@apertus.org>
+# SPDX-FileCopyrightText: © 2021-2024 Sebastian Pichelhofer <sp@apertus.org>
 # SPDX-FileCopyrightText: © 2021 Andrej Balyschew <red.falcon1983@googlemail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -189,11 +189,11 @@ def get_rgb_file():
             return window['-inputfolder-'].get() + '/' + foldername + '/' + filename
 
 
-def view_stream():
+def view_stream_color():
     stream = os.popen('ffplay ' + video_device)
     stream.read()
 
-def view_raw_stream():
+def view_stream_raw():
     p = Popen(['cd ' + data['recorderfolder'] + " ; target/release/cli from-cli WebcamInput --device 0 ! DualFrameRawDecoder ! GpuBitDepthConverter ! Debayer ! Display --fullscreen true"],
                       shell=True, stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
     q = Queue()
@@ -273,26 +273,25 @@ def test_button_callback(sender, app_data):
     
 
 with dpg.font_registry():
-    default_font = dpg.add_font("OpenSans-Regular.ttf", 22)
+    default_font = dpg.add_font(os.path.dirname(os.path.realpath(__file__)) + "/OpenSans-Regular.ttf", 22)
 
 with dpg.window(tag="AXIOM Recorder GUI"):
     dpg.bind_font(default_font)
 
     with dpg.tab_bar():
         with dpg.tab(label="Main"):
-            dpg.add_button(label="Test", callback=test_button_callback, width=200, height=50)
+            dpg.add_button(label="Callback Test", callback=test_button_callback, width=200, height=50)
             dpg.add_button(label="REC", width=200, height=50)
             dpg.add_button(label="Play Last Clip", width=200, height=50)
-            dpg.add_button(label="Settings", width=200, height=50)
             dpg.add_button(label="Clips", width=200, height=50)
-            dpg.add_button(label="View HDMI Signal", callback=view_stream, width=200, height=50)
+            dpg.add_button(label="View HDMI Signal (color)", callback=view_stream_color, width=200, height=50)
+            dpg.add_button(label="View HDMI Signal (raw)", callback=view_stream_raw, width=200, height=50)
         with dpg.tab(label="Config"):
             dpg.add_input_text(label="Video Device", tag=video_device_input_text)
             dpg.set_value(video_device_input_text, video_device)
-            dpg.add_input_text(label="AXIOM Beta IP")
+            #dpg.add_input_text(label="AXIOM Beta IP")
             dpg.add_input_text(label="AXIOM Recorder Path")
             dpg.add_input_text(label="Recording Folder")
-
 
 
 dpg.set_primary_window("AXIOM Recorder GUI", True)
